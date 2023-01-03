@@ -31,3 +31,4 @@ include "netty-websocket-http1-test"
 include "netty-websocket-http1-perftest"
 include "netty-websocket-http1-soaktest"
 
+include "netty-builtin-websocket-perftest"
