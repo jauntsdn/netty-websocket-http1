@@ -28,5 +28,6 @@ rootProject.name = "netty-websocket-http1-parent"
 
 include "netty-websocket-http1"
 include "netty-websocket-http1-test"
+include "netty-websocket-http1-perftest"
 include "netty-websocket-http1-soaktest"
 
