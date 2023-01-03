@@ -1,0 +1,178 @@
+/*
+ * Copyright 2022 - present Maksym Ostroverkhov.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.jauntsdn.netty.handler.codec.http.websocketx;
+
+import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_BINARY;
+import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_CLOSE;
+import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_PING;
+import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_PONG;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
+import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
+import io.netty.util.internal.PlatformDependent;
+import java.nio.charset.StandardCharsets;
+
+final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
+    implements WebSocketCallbacksFrameEncoder {
+
+  static final MaskingWebSocketEncoder INSTANCE = new MaskingWebSocketEncoder();
+
+  private MaskingWebSocketEncoder() {}
+
+  @Override
+  public boolean isSharable() {
+    return true;
+  }
+
+  @Override
+  public WebSocketFrameFactory frameFactory(ChannelHandlerContext ctx) {
+    ctx.pipeline().remove(this);
+    return FrameFactory.INSTANCE;
+  }
+
+  static class FrameFactory implements WebSocketFrameFactory {
+    static final int PREFIX_SIZE_SMALL = 6;
+    static final int BINARY_FRAME_SMALL =
+        OPCODE_BINARY << 8 | /*FIN*/ (byte) 1 << 15 | /*MASK*/ (byte) 1 << 7;
+
+    static final int CLOSE_FRAME =
+        OPCODE_CLOSE << 8 | /*FIN*/ (byte) 1 << 15 | /*MASK*/ (byte) 1 << 7;
+    static final int PING_FRAME =
+        OPCODE_PING << 8 | /*FIN*/ (byte) 1 << 15 | /*MASK*/ (byte) 1 << 7;
+    static final int PONG_FRAME =
+        OPCODE_PONG << 8 | /*FIN*/ (byte) 1 << 15 | /*MASK*/ (byte) 1 << 7;
+
+    static final int PREFIX_SIZE_MEDIUM = 8;
+    static final int BINARY_FRAME_MEDIUM = (BINARY_FRAME_SMALL | /*LEN*/ (byte) 126) << 16;
+
+    static final WebSocketFrameFactory INSTANCE = new FrameFactory();
+
+    @Override
+    public ByteBuf createBinaryFrame(ByteBufAllocator allocator, int payloadSize) {
+      if (payloadSize <= 125) {
+        return allocator
+            .buffer(PREFIX_SIZE_SMALL + payloadSize)
+            .writeShort(BINARY_FRAME_SMALL | payloadSize)
+            .readerIndex(2)
+            .writeInt(mask());
+      } else if (payloadSize <= 65_535) {
+        return allocator
+            .buffer(PREFIX_SIZE_MEDIUM + payloadSize)
+            .writeLong((long) (BINARY_FRAME_MEDIUM | payloadSize) << 32 | mask())
+            .readerIndex(4);
+      } else {
+        throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
+      }
+    }
+
+    @Override
+    public ByteBuf createCloseFrame(ByteBufAllocator allocator, int statusCode, String reason) {
+      if (!WebSocketCloseStatus.isValidStatusCode(statusCode)) {
+        throw new IllegalArgumentException("incorrect close status code: " + statusCode);
+      }
+      if (reason == null) {
+        reason = "";
+      }
+      int payloadSize = /*status code*/ 2 + ByteBufUtil.utf8Bytes(reason);
+      if (payloadSize <= 125) {
+        ByteBuf frame =
+            allocator
+                .buffer(PREFIX_SIZE_SMALL + payloadSize)
+                .writeShort(CLOSE_FRAME | payloadSize)
+                .readerIndex(2)
+                .writeInt(mask())
+                .writeShort(statusCode);
+        if (!reason.isEmpty()) {
+          frame.writeCharSequence(reason, StandardCharsets.UTF_8);
+        }
+        return frame;
+      }
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 125));
+    }
+
+    @Override
+    public ByteBuf createPingFrame(ByteBufAllocator allocator, int payloadSize) {
+      if (payloadSize <= 125) {
+        return allocator
+            .buffer(PREFIX_SIZE_SMALL + payloadSize)
+            .writeShort(PING_FRAME | payloadSize)
+            .readerIndex(2)
+            .writeInt(mask());
+      }
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 125));
+    }
+
+    @Override
+    public ByteBuf createPongFrame(ByteBufAllocator allocator, int payloadSize) {
+      if (payloadSize <= 125) {
+        return allocator
+            .buffer(PREFIX_SIZE_SMALL + payloadSize)
+            .writeShort(PONG_FRAME | payloadSize)
+            .readerIndex(2)
+            .writeInt(mask());
+      }
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 125));
+    }
+
+    @Override
+    public ByteBuf mask(ByteBuf frame) {
+      int maskIndex = frame.readerIndex();
+      int mask = frame.getInt(maskIndex);
+      int cur = maskIndex + /*mask size*/ 4;
+      int end = frame.writerIndex();
+
+      if (end - cur >= 8) {
+        long longMask = (long) mask & 0xFFFFFFFFL;
+        longMask |= longMask << 32;
+        for (; cur < end - 7; cur += 8) {
+          frame.setLong(cur, frame.getLong(cur) ^ longMask);
+        }
+      }
+      if (end - cur >= 4) {
+        frame.setInt(cur, frame.getInt(cur) ^ mask);
+        cur += 4;
+      }
+      int maskOffset = 0;
+      for (; cur < end; cur++) {
+        byte bytePayload = frame.getByte(cur);
+        frame.setByte(cur, bytePayload ^ byteAtIndex(mask, maskOffset++ & 3));
+      }
+      return frame.readerIndex(0);
+    }
+
+    @Override
+    public Encoder encoder() {
+      throw new UnsupportedOperationException("not implemented");
+    }
+
+    static int byteAtIndex(int mask, int index) {
+      return (mask >> 8 * (3 - index)) & 0xFF;
+    }
+
+    static int mask() {
+      return PlatformDependent.threadLocalRandom().nextInt(Integer.MAX_VALUE);
+    }
+
+    static String payloadSizeLimit(int payloadSize, int limit) {
+      return "payloadSize: " + payloadSize + " exceeds supported limit: " + limit;
+    }
+  }
+}
