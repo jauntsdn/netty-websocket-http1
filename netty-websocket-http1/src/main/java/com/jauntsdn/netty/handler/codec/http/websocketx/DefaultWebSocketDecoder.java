@@ -22,6 +22,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 
 final class DefaultWebSocketDecoder extends WebSocketDecoder {
+  WebSocketFrameFactory frameFactory;
+
+  final int maxFramePayloadLength;
   int state = STATE_NON_PARTIAL;
   ByteBuf partialPrefix;
   int partialMask;
@@ -38,7 +41,7 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
   int fragmentedTotalLength = WebSocketProtocol.VALIDATION_RESULT_NON_FRAGMENTING;
 
   DefaultWebSocketDecoder(int maxFramePayloadLength) {
-    super(maxFramePayloadLength);
+    this.maxFramePayloadLength = maxFramePayloadLength;
   }
 
   @Override
@@ -55,6 +58,20 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
       payload.release();
     }
     super.channelInactive(ctx);
+  }
+
+  @Override
+  public void frameListener(
+      ChannelHandlerContext ctx,
+      WebSocketFrameListener webSocketFrameListener,
+      WebSocketFrameFactory frameFactory) {
+    super.frameListener(ctx, webSocketFrameListener, frameFactory);
+    this.frameFactory = frameFactory;
+  }
+
+  @Override
+  WebSocketFrameFactory frameFactory() {
+    return frameFactory;
   }
 
   @Override

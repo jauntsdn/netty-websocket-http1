@@ -28,15 +28,13 @@ abstract class WebSocketDecoder implements ChannelInboundHandler, WebSocketCallb
   static final int STATE_PARTIAL_PAYLOAD = 3;
   static final int STATE_CLOSED_INBOUND = 4;
 
-  final int maxFramePayloadLength;
   WebSocketFrameListener webSocketFrameListener;
-  WebSocketFrameFactory frameFactory;
 
-  WebSocketDecoder(int maxFramePayloadLength) {
-    this.maxFramePayloadLength = maxFramePayloadLength;
-  }
+  WebSocketDecoder() {}
 
   abstract void decode(ChannelHandlerContext ctx, ByteBuf buf);
+
+  abstract WebSocketFrameFactory frameFactory();
 
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
@@ -67,7 +65,6 @@ abstract class WebSocketDecoder implements ChannelInboundHandler, WebSocketCallb
       WebSocketFrameListener webSocketFrameListener,
       WebSocketFrameFactory frameFactory) {
     this.webSocketFrameListener = webSocketFrameListener;
-    this.frameFactory = frameFactory;
   }
 
   @Override

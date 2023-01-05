@@ -27,13 +27,38 @@ interface WebSocketCallbacksFrameDecoder extends WebSocketFrameDecoder {
       WebSocketFrameFactory frameFactory);
 
   static WebSocketCallbacksFrameDecoder frameDecoder(
+      boolean maskPayload,
+      int maxFramePayloadLength,
+      boolean expectMaskedFrames,
+      boolean allowMaskMismatch) {
+
+    /*strict*/
+    if (!allowMaskMismatch) {
+      /*small unmasked*/
+      if (maxFramePayloadLength <= 125 && !expectMaskedFrames) {
+        return maskPayload
+            ? new SmallWebSocketDecoder.WithMaskingEncoder()
+            : new SmallWebSocketDecoder.WithNonMaskingEncoder();
+      }
+      throw new IllegalArgumentException(
+          "enforcing strictly masked/unmasked frames is not supported");
+    }
+    return new DefaultWebSocketDecoder(maxFramePayloadLength);
+  }
+
+  static WebSocketCallbacksFrameDecoder frameDecoder(
       int maxFramePayloadLength, boolean expectMaskedFrames, boolean allowMaskMismatch) {
 
     /*strict*/
     if (!allowMaskMismatch) {
       /*small unmasked*/
       if (maxFramePayloadLength <= 125 && !expectMaskedFrames) {
-        return new SmallWebSocketDecoder(maxFramePayloadLength);
+        throw new IllegalArgumentException(
+            "small decoder: use frameDecoder("
+                + "boolean maskPayload,"
+                + "int maxFramePayloadLength,"
+                + "boolean expectMaskedFrames,"
+                + "boolean allowMaskMismatch) instead of deprecated one");
       }
       throw new IllegalArgumentException(
           "enforcing strictly masked/unmasked frames is not supported");
