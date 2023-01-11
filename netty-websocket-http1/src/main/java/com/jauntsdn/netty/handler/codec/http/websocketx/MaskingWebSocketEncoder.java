@@ -48,7 +48,7 @@ final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     return FrameFactory.INSTANCE;
   }
 
-  static class FrameFactory implements WebSocketFrameFactory {
+  static class FrameFactory implements WebSocketFrameFactory, WebSocketFrameFactory.Encoder {
     static final int PREFIX_SIZE_SMALL = 6;
     static final int BINARY_FRAME_SMALL =
         OPCODE_BINARY << 8 | /*FIN*/ (byte) 1 << 15 | /*MASK*/ (byte) 1 << 7;
@@ -136,9 +136,51 @@ final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     public ByteBuf mask(ByteBuf frame) {
       int maskIndex = frame.readerIndex();
       int mask = frame.getInt(maskIndex);
-      int cur = maskIndex + /*mask size*/ 4;
-      int end = frame.writerIndex();
+      mask(mask, frame, maskIndex + /*mask size*/ 4, frame.writerIndex());
+      return frame.readerIndex(0);
+    }
 
+    @Override
+    public Encoder encoder() {
+      return this;
+    }
+
+    @Override
+    public ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
+      int frameSize = binaryFrame.readableBytes();
+      int smallPrefixSize = 6;
+      if (frameSize <= 125 + smallPrefixSize) {
+        int payloadSize = frameSize - smallPrefixSize;
+        binaryFrame.setShort(0, BINARY_FRAME_SMALL | payloadSize);
+        int mask = mask();
+        binaryFrame.setInt(2, mask);
+        return mask(mask, binaryFrame, smallPrefixSize, binaryFrame.writerIndex());
+      }
+
+      int mediumPrefixSize = 8;
+      if (frameSize <= 65_535 + mediumPrefixSize) {
+        int payloadSize = frameSize - mediumPrefixSize;
+        int mask = mask();
+        binaryFrame.setLong(0, ((BINARY_FRAME_MEDIUM | (long) payloadSize) << 32) | mask);
+        return mask(mask, binaryFrame, mediumPrefixSize, binaryFrame.writerIndex());
+      }
+      int payloadSize = frameSize - 12;
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
+    }
+
+    @Override
+    public int sizeofBinaryFrame(int payloadSize) {
+      if (payloadSize <= 125) {
+        return payloadSize + 6;
+      }
+      if (payloadSize < 65_535) {
+        return payloadSize + 8;
+      }
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
+    }
+
+    static ByteBuf mask(int mask, ByteBuf frame, int start, int end) {
+      int cur = start;
       if (end - cur >= 8) {
         long longMask = (long) mask & 0xFFFFFFFFL;
         longMask |= longMask << 32;
@@ -155,12 +197,7 @@ final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
         byte bytePayload = frame.getByte(cur);
         frame.setByte(cur, bytePayload ^ byteAtIndex(mask, maskOffset++ & 3));
       }
-      return frame.readerIndex(0);
-    }
-
-    @Override
-    public Encoder encoder() {
-      throw new UnsupportedOperationException("not implemented");
+      return frame;
     }
 
     static int byteAtIndex(int mask, int index) {
