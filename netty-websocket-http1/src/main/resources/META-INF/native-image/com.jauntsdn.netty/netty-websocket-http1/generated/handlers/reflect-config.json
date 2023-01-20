@@ -1,0 +1,79 @@
+[
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.DefaultWebSocketDecoder",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.DefaultWebSocketDecoder"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketDecoder",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketDecoder"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.MaskingWebSocketEncoder",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.MaskingWebSocketEncoder"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.SmallWebSocketDecoder",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.SmallWebSocketDecoder"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.SmallWebSocketDecoder$WithMaskingEncoder",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.SmallWebSocketDecoder$WithMaskingEncoder"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.SmallWebSocketDecoder$WithNonMaskingEncoder",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.SmallWebSocketDecoder$WithNonMaskingEncoder"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketClientHandshaker",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketClientHandshaker"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketServerHandshaker",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketServerHandshaker"
+    },
+    "queryAllPublicMethods": true
+  },
+  {
+    "name": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler",
+    "condition": {
+      "typeReachable": "com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler"
+    },
+    "queryAllPublicMethods": true
+  }
+]
