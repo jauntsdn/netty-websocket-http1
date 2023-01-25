@@ -51,6 +51,9 @@ public class Main {
 
     String host = System.getProperty("HOST", "localhost");
     int port = Integer.parseInt(System.getProperty("PORT", "8088"));
+    int frameSizeLimit = Integer.parseInt(System.getProperty("SIZE", "65535"));
+    boolean expectMasked = Boolean.parseBoolean(System.getProperty("MASKED", "false"));
+    boolean maskMismatch = !Boolean.parseBoolean(System.getProperty("STRICT", "false"));
 
     boolean isOpensslAvailable = OpenSsl.isAvailable();
     boolean isEpollAvailable = Transport.isEpollAvailable();
@@ -71,7 +74,8 @@ public class Main {
         bootstrap
             .group(transport.eventLoopGroup())
             .channel(transport.serverChannel())
-            .childHandler(new ConnectionAcceptor(sslContext))
+            .childHandler(
+                new ConnectionAcceptor(sslContext, frameSizeLimit, expectMasked, maskMismatch))
             .bind(host, port)
             .sync()
             .channel();
@@ -83,13 +87,17 @@ public class Main {
     private final SslContext sslContext;
     private final WebSocketDecoderConfig webSocketDecoderConfig;
 
-    ConnectionAcceptor(SslContext sslContext) {
+    ConnectionAcceptor(
+        SslContext sslContext,
+        int frameSizeLimit,
+        boolean expectMasked,
+        boolean allowMaskMismatch) {
       this.sslContext = sslContext;
       this.webSocketDecoderConfig =
           WebSocketDecoderConfig.newBuilder()
-              .allowMaskMismatch(true)
-              .expectMaskedFrames(false)
-              .maxFramePayloadLength(65_535)
+              .allowMaskMismatch(allowMaskMismatch)
+              .expectMaskedFrames(expectMasked)
+              .maxFramePayloadLength(frameSizeLimit)
               .withUTF8Validator(false)
               .build();
     }

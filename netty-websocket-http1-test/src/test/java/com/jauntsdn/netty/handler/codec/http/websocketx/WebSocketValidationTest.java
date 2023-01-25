@@ -36,6 +36,8 @@ import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
 import io.netty.util.ReferenceCountUtil;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -44,6 +46,8 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class WebSocketValidationTest {
   Channel server;
@@ -59,7 +63,7 @@ public class WebSocketValidationTest {
   @Timeout(15)
   @Test
   void frameSizeLimit() throws Exception {
-    FrameSizeLimitServerHandler serverHandler = new FrameSizeLimitServerHandler();
+    ValidationTestServerHandler serverHandler = new ValidationTestServerHandler();
     Channel s = server = testServer("localhost", 0, decoderConfig(125), serverHandler);
     FrameSizeLimitClientHandler clientHandler = new FrameSizeLimitClientHandler(126);
     Channel client = testClient(s.localAddress(), 125, clientHandler);
@@ -86,20 +90,161 @@ public class WebSocketValidationTest {
     }
   }
 
+  @Timeout(15)
+  @ValueSource(
+      bytes = {
+        WebSocketProtocol.OPCODE_PING,
+        WebSocketProtocol.OPCODE_PONG,
+        WebSocketProtocol.OPCODE_CLOSE
+      })
+  @ParameterizedTest
+  void controlFrameSizeLimit(byte opcode) throws Exception {
+    ValidationTestServerHandler serverHandler = new ValidationTestServerHandler();
+    Channel s = server = testServer("localhost", 0, decoderConfig(65_535), serverHandler);
+    ControlFrameSizeLimitClientHandler clientHandler =
+        new ControlFrameSizeLimitClientHandler(opcode);
+    Channel client = testClient(s.localAddress(), 65_535, clientHandler);
+    serverHandler.onClose.join();
+    clientHandler.onClose.join();
+
+    Throwable serverInboundException = serverHandler.inboundException;
+    Assertions.assertThat(serverInboundException).isNotNull();
+    Assertions.assertThat(serverInboundException)
+        .isInstanceOf(CorruptedWebSocketFrameException.class);
+    WebSocketCloseStatus closeStatus =
+        ((CorruptedWebSocketFrameException) serverInboundException).closeStatus();
+    Assertions.assertThat(closeStatus.code())
+        .isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
+    Assertions.assertThat(serverHandler.framesReceived).isEqualTo(0);
+    Assertions.assertThat(clientHandler.nonCloseFrames).isEqualTo(0);
+    Set<ByteBuf> closeFrames = clientHandler.closeFrames;
+    try {
+      Assertions.assertThat(closeFrames.size()).isEqualTo(1);
+      ByteBuf closeFramePayload = closeFrames.iterator().next();
+      Assertions.assertThat(WebSocketFrameListener.CloseFramePayload.statusCode(closeFramePayload))
+          .isEqualTo(WebSocketCloseStatus.MESSAGE_TOO_BIG.code());
+    } finally {
+      closeFrames.forEach(ByteBuf::release);
+    }
+  }
+
+  @Timeout(15)
   @Test
-  void controlFrameSizeLimit() {}
+  void frameWithExtensions() throws Exception {
+    ValidationTestServerHandler serverHandler = new ValidationTestServerHandler();
+    Channel s = server = testServer("localhost", 0, decoderConfig(65_535), serverHandler);
+    ExtensionFrameClientHandler clientHandler = new ExtensionFrameClientHandler();
+    Channel client = testClient(s.localAddress(), 65_535, clientHandler);
+    serverHandler.onClose.join();
+    clientHandler.onClose.join();
+
+    Throwable serverInboundException = serverHandler.inboundException;
+    Assertions.assertThat(serverInboundException).isNotNull();
+    Assertions.assertThat(serverInboundException)
+        .isInstanceOf(CorruptedWebSocketFrameException.class);
+    WebSocketCloseStatus closeStatus =
+        ((CorruptedWebSocketFrameException) serverInboundException).closeStatus();
+    Assertions.assertThat(closeStatus.code()).isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    Assertions.assertThat(serverHandler.framesReceived).isEqualTo(0);
+    Assertions.assertThat(clientHandler.nonCloseFrames).isEqualTo(0);
+    Set<ByteBuf> closeFrames = clientHandler.closeFrames;
+    try {
+      Assertions.assertThat(closeFrames.size()).isEqualTo(1);
+      ByteBuf closeFramePayload = closeFrames.iterator().next();
+      Assertions.assertThat(WebSocketFrameListener.CloseFramePayload.statusCode(closeFramePayload))
+          .isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    } finally {
+      closeFrames.forEach(ByteBuf::release);
+    }
+  }
+
+  @Timeout(15)
+  @Test
+  void invalidFragmentStart() throws Exception {
+    ValidationTestServerHandler serverHandler = new ValidationTestServerHandler();
+    Channel s = server = testServer("localhost", 0, decoderConfig(65_535), serverHandler);
+    FragmentStartClientHandler clientHandler = new FragmentStartClientHandler();
+    Channel client = testClient(s.localAddress(), 65_535, clientHandler);
+    serverHandler.onClose.join();
+    clientHandler.onClose.join();
+
+    Throwable serverInboundException = serverHandler.inboundException;
+    Assertions.assertThat(serverInboundException).isNotNull();
+    Assertions.assertThat(serverInboundException)
+        .isInstanceOf(CorruptedWebSocketFrameException.class);
+    WebSocketCloseStatus closeStatus =
+        ((CorruptedWebSocketFrameException) serverInboundException).closeStatus();
+    Assertions.assertThat(closeStatus.code()).isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    Assertions.assertThat(serverHandler.framesReceived).isEqualTo(0);
+    Assertions.assertThat(clientHandler.nonCloseFrames).isEqualTo(0);
+    Set<ByteBuf> closeFrames = clientHandler.closeFrames;
+    try {
+      Assertions.assertThat(closeFrames.size()).isEqualTo(1);
+      ByteBuf closeFramePayload = closeFrames.iterator().next();
+      Assertions.assertThat(WebSocketFrameListener.CloseFramePayload.statusCode(closeFramePayload))
+          .isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    } finally {
+      closeFrames.forEach(ByteBuf::release);
+    }
+  }
 
   @Test
-  void frameWithExtensions() {}
+  void invalidFragmentContinuation() throws Exception {
+    ValidationTestServerHandler serverHandler = new ValidationTestServerHandler();
+    Channel s = server = testServer("localhost", 0, decoderConfig(65_535), serverHandler);
+    FragmentContinuationClientHandler clientHandler = new FragmentContinuationClientHandler();
+    Channel client = testClient(s.localAddress(), 65_535, clientHandler);
+    serverHandler.onClose.join();
+    clientHandler.onClose.join();
+
+    Throwable serverInboundException = serverHandler.inboundException;
+    Assertions.assertThat(serverInboundException).isNotNull();
+    Assertions.assertThat(serverInboundException)
+        .isInstanceOf(CorruptedWebSocketFrameException.class);
+    WebSocketCloseStatus closeStatus =
+        ((CorruptedWebSocketFrameException) serverInboundException).closeStatus();
+    Assertions.assertThat(closeStatus.code()).isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    Assertions.assertThat(serverHandler.framesReceived).isEqualTo(1);
+    Assertions.assertThat(clientHandler.nonCloseFrames).isEqualTo(0);
+    Set<ByteBuf> closeFrames = clientHandler.closeFrames;
+    try {
+      Assertions.assertThat(closeFrames.size()).isEqualTo(1);
+      ByteBuf closeFramePayload = closeFrames.iterator().next();
+      Assertions.assertThat(WebSocketFrameListener.CloseFramePayload.statusCode(closeFramePayload))
+          .isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    } finally {
+      closeFrames.forEach(ByteBuf::release);
+    }
+  }
 
   @Test
-  void invalidFragmentStart() {}
+  void invalidFragmentCompletion() throws Exception {
+    ValidationTestServerHandler serverHandler = new ValidationTestServerHandler();
+    Channel s = server = testServer("localhost", 0, decoderConfig(65_535), serverHandler);
+    FragmentCompletionClientHandler clientHandler = new FragmentCompletionClientHandler();
+    Channel client = testClient(s.localAddress(), 65_535, clientHandler);
+    serverHandler.onClose.join();
+    clientHandler.onClose.join();
 
-  @Test
-  void invalidFragmentContinuation() {}
-
-  @Test
-  void invalidFragmentCompletion() {}
+    Throwable serverInboundException = serverHandler.inboundException;
+    Assertions.assertThat(serverInboundException).isNotNull();
+    Assertions.assertThat(serverInboundException)
+        .isInstanceOf(CorruptedWebSocketFrameException.class);
+    WebSocketCloseStatus closeStatus =
+        ((CorruptedWebSocketFrameException) serverInboundException).closeStatus();
+    Assertions.assertThat(closeStatus.code()).isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    Assertions.assertThat(serverHandler.framesReceived).isEqualTo(1);
+    Assertions.assertThat(clientHandler.nonCloseFrames).isEqualTo(0);
+    Set<ByteBuf> closeFrames = clientHandler.closeFrames;
+    try {
+      Assertions.assertThat(closeFrames.size()).isEqualTo(1);
+      ByteBuf closeFramePayload = closeFrames.iterator().next();
+      Assertions.assertThat(WebSocketFrameListener.CloseFramePayload.statusCode(closeFramePayload))
+          .isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
+    } finally {
+      closeFrames.forEach(ByteBuf::release);
+    }
+  }
 
   static WebSocketDecoderConfig decoderConfig(int maxFramePayloadLength) {
     return WebSocketDecoderConfig.newBuilder()
@@ -146,6 +291,249 @@ public class WebSocketValidationTest {
         .connect(new InetSocketAddress(host, port))
         .sync()
         .channel();
+  }
+
+  static class ExtensionFrameClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    public static final int PAYLOAD_SIZE = 42;
+    final CompletableFuture<Void> onClose = new CompletableFuture<>();
+    final Set<ByteBuf> closeFrames = ConcurrentHashMap.newKeySet();
+    volatile int nonCloseFrames;
+    WebSocketFrameFactory webSocketFrameFactory;
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+      ByteBuf controlFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      controlFrame.setByte(0, controlFrame.getByte(0) | 0b0100_0000);
+      byte[] payloadBytes = new byte[PAYLOAD_SIZE];
+      ThreadLocalRandom.current().nextBytes(payloadBytes);
+      controlFrame.writeBytes(payloadBytes);
+      ctx.writeAndFlush(factory.mask(controlFrame));
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        closeFrames.add(payload);
+        return;
+      }
+      //noinspection NonAtomicOperationOnVolatileField: written from single thread
+      nonCloseFrames++;
+      ReferenceCountUtil.release(payload);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      onClose.complete(null);
+    }
+  }
+
+  static class FragmentStartClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    public static final int PAYLOAD_SIZE = 127;
+    final CompletableFuture<Void> onClose = new CompletableFuture<>();
+    final Set<ByteBuf> closeFrames = ConcurrentHashMap.newKeySet();
+    volatile int nonCloseFrames;
+    WebSocketFrameFactory webSocketFrameFactory;
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+      ByteBuf fragmentFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      fragmentFrame.setByte(0, 0);
+      byte[] payloadBytes = new byte[PAYLOAD_SIZE];
+      ThreadLocalRandom.current().nextBytes(payloadBytes);
+      fragmentFrame.writeBytes(payloadBytes);
+      ctx.writeAndFlush(factory.mask(fragmentFrame));
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        closeFrames.add(payload);
+        return;
+      }
+      //noinspection NonAtomicOperationOnVolatileField: written from single thread
+      nonCloseFrames++;
+      ReferenceCountUtil.release(payload);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      onClose.complete(null);
+    }
+  }
+
+  static class FragmentContinuationClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    public static final int PAYLOAD_SIZE = 127;
+    final CompletableFuture<Void> onClose = new CompletableFuture<>();
+    final Set<ByteBuf> closeFrames = ConcurrentHashMap.newKeySet();
+    volatile int nonCloseFrames;
+    WebSocketFrameFactory webSocketFrameFactory;
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      byte[] payloadBytes = new byte[PAYLOAD_SIZE];
+      ThreadLocalRandom.current().nextBytes(payloadBytes);
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+
+      ByteBuf fragmentStartFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      fragmentStartFrame.setByte(0, fragmentStartFrame.getByte(0) & 0b0111_1111);
+      fragmentStartFrame.writeBytes(payloadBytes);
+      ctx.write(factory.mask(fragmentStartFrame));
+
+      ByteBuf fragmentContFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      fragmentContFrame.setByte(0, fragmentContFrame.getByte(0) & 0b0111_1111);
+      fragmentContFrame.writeBytes(payloadBytes);
+      ctx.writeAndFlush(factory.mask(fragmentContFrame));
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        closeFrames.add(payload);
+        return;
+      }
+      //noinspection NonAtomicOperationOnVolatileField: written from single thread
+      nonCloseFrames++;
+      ReferenceCountUtil.release(payload);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      onClose.complete(null);
+    }
+  }
+
+  static class FragmentCompletionClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    public static final int PAYLOAD_SIZE = 127;
+    final CompletableFuture<Void> onClose = new CompletableFuture<>();
+    final Set<ByteBuf> closeFrames = ConcurrentHashMap.newKeySet();
+    volatile int nonCloseFrames;
+    WebSocketFrameFactory webSocketFrameFactory;
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      byte[] payloadBytes = new byte[PAYLOAD_SIZE];
+      ThreadLocalRandom.current().nextBytes(payloadBytes);
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+
+      ByteBuf fragmentStartFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      fragmentStartFrame.setByte(0, fragmentStartFrame.getByte(0) & 0b0111_1111);
+      fragmentStartFrame.writeBytes(payloadBytes);
+      ctx.write(factory.mask(fragmentStartFrame));
+
+      ByteBuf fragmentContFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      fragmentContFrame.writeBytes(payloadBytes);
+      ctx.writeAndFlush(factory.mask(fragmentContFrame));
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        closeFrames.add(payload);
+        return;
+      }
+      //noinspection NonAtomicOperationOnVolatileField: written from single thread
+      nonCloseFrames++;
+      ReferenceCountUtil.release(payload);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      onClose.complete(null);
+    }
+  }
+
+  static class ControlFrameSizeLimitClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    public static final int PAYLOAD_SIZE = 127;
+    final CompletableFuture<Void> onClose = new CompletableFuture<>();
+    final Set<ByteBuf> closeFrames = ConcurrentHashMap.newKeySet();
+    final byte opcode;
+    volatile int nonCloseFrames;
+    WebSocketFrameFactory webSocketFrameFactory;
+
+    ControlFrameSizeLimitClientHandler(byte opcode) {
+      this.opcode = opcode;
+    }
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+      ByteBuf controlFrame = factory.createBinaryFrame(ctx.alloc(), PAYLOAD_SIZE);
+      controlFrame.setByte(0, controlFrame.getByte(0) & 0xF0 | opcode);
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        String closeMsg = String.join("", Collections.nCopies(25, "close"));
+        controlFrame
+            .writeShort(WebSocketCloseStatus.NORMAL_CLOSURE.code())
+            .writeCharSequence(closeMsg, StandardCharsets.UTF_8);
+      } else {
+        byte[] payloadBytes = new byte[PAYLOAD_SIZE];
+        ThreadLocalRandom.current().nextBytes(payloadBytes);
+        controlFrame.writeBytes(payloadBytes);
+      }
+      ctx.writeAndFlush(factory.mask(controlFrame));
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        closeFrames.add(payload);
+        return;
+      }
+      //noinspection NonAtomicOperationOnVolatileField: written from single thread
+      nonCloseFrames++;
+      ReferenceCountUtil.release(payload);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      onClose.complete(null);
+    }
   }
 
   static class FrameSizeLimitClientHandler
@@ -230,7 +618,7 @@ public class WebSocketValidationTest {
         .channel();
   }
 
-  static class FrameSizeLimitServerHandler
+  static class ValidationTestServerHandler
       implements WebSocketFrameListener, WebSocketCallbacksHandler {
     final CompletableFuture<Void> onClose = new CompletableFuture<>();
 
@@ -246,6 +634,8 @@ public class WebSocketValidationTest {
     @Override
     public void onChannelRead(
         ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      //noinspection NonAtomicOperationOnVolatileField written from single thread
+      framesReceived++;
       payload.release();
     }
 

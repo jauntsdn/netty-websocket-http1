@@ -20,20 +20,13 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 
-final class SmallWebSocketDecoder extends WebSocketDecoder {
-  int state = STATE_NON_PARTIAL;
-  int partialPrefix;
+abstract class SmallWebSocketDecoder extends WebSocketDecoder {
+  static final int MAX_FRAME_PAYLOAD_LENGTH = 125;
+  /* [8bit frag total length][8bit partial prefix][1bit unused][1bit fin][4bit opcode][2bit state] */
+  int encodedState = encodeFragmentedLength(0, WebSocketProtocol.VALIDATION_RESULT_NON_FRAGMENTING);
   ByteBuf partialPayload;
-  int partialRemaining;
-  int opcode;
-  boolean fin;
 
-  /* non-negative value means fragmentation is in progress*/
-  int fragmentedTotalLength = WebSocketProtocol.VALIDATION_RESULT_NON_FRAGMENTING;
-
-  SmallWebSocketDecoder(int maxFramePayloadLength) {
-    super(maxFramePayloadLength);
-  }
+  SmallWebSocketDecoder() {}
 
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
@@ -46,14 +39,15 @@ final class SmallWebSocketDecoder extends WebSocketDecoder {
 
   @Override
   void decode(ChannelHandlerContext ctx, ByteBuf in) {
-    int st = state;
+    int encodedSt = encodedState;
+    int st = decodeState(encodedSt);
     int readableBytes = in.readableBytes();
     while (readableBytes > 0) {
       switch (st) {
         case STATE_NON_PARTIAL:
           if (readableBytes == 1) {
             st = STATE_PARTIAL_PREFIX;
-            partialPrefix = (in.readByte() << 8) & 0xFFFF;
+            encodedSt = encodePartialPrefix(encodedSt, in.readByte());
             readableBytes = 0;
           } else {
             short prefix = in.readShort();
@@ -73,25 +67,28 @@ final class SmallWebSocketDecoder extends WebSocketDecoder {
                   "frames masking is not supported");
               return;
             }
-
             boolean finFlag = prefix < 0;
             int result =
                 WebSocketProtocol.validate(
-                    ctx, this, flags, code, length, fragmentedTotalLength, maxFramePayloadLength);
+                    ctx,
+                    this,
+                    flags,
+                    code,
+                    length,
+                    decodeFragmentedLength(encodedSt),
+                    MAX_FRAME_PAYLOAD_LENGTH);
             if (result == WebSocketProtocol.VALIDATION_RESULT_INVALID) {
               return;
             }
-            fragmentedTotalLength = result;
+            encodedSt = encodeFragmentedLength(encodedSt, result);
 
             if (readableBytes >= length) {
               ByteBuf payload = in.readRetainedSlice(length);
               readableBytes -= length;
               onFrameRead(ctx, finFlag, code, payload);
             } else {
-              opcode = code;
-              fin = finFlag;
+              encodedSt = encodeFlags(encodedSt, code, finFlag);
               partialPayload = partialPayload(ctx, in, length);
-              partialRemaining = length - readableBytes;
               readableBytes = 0;
               st = STATE_PARTIAL_PAYLOAD;
             }
@@ -99,8 +96,7 @@ final class SmallWebSocketDecoder extends WebSocketDecoder {
           break;
 
         case STATE_PARTIAL_PREFIX:
-          int prefix = partialPrefix;
-          prefix |= in.readByte();
+          int prefix = decodePartialPrefix(encodedSt) | in.readByte();
           readableBytes -= 1;
 
           int flagsAndOpcode = prefix >> 8;
@@ -115,14 +111,16 @@ final class SmallWebSocketDecoder extends WebSocketDecoder {
                 ctx, this, WebSocketCloseStatus.NORMAL_CLOSURE, "frames masking is not supported");
             return;
           }
+          int fragmentedTotalLength = decodeFragmentedLength(encodedSt);
 
           int result =
               WebSocketProtocol.validate(
-                  ctx, this, flags, code, length, fragmentedTotalLength, maxFramePayloadLength);
+                  ctx, this, flags, code, length, fragmentedTotalLength, MAX_FRAME_PAYLOAD_LENGTH);
           if (result == WebSocketProtocol.VALIDATION_RESULT_INVALID) {
             return;
           }
           fragmentedTotalLength = result;
+          encodedSt = encodeFragmentedLength(encodedSt, fragmentedTotalLength);
 
           if (readableBytes >= length) {
             ByteBuf payload = in.readRetainedSlice(length);
@@ -130,28 +128,27 @@ final class SmallWebSocketDecoder extends WebSocketDecoder {
             st = STATE_NON_PARTIAL;
             onFrameRead(ctx, finFlag, code, payload);
           } else {
-            opcode = code;
-            fin = finFlag;
+            encodedSt = encodeFlags(encodedSt, code, finFlag);
             partialPayload = partialPayload(ctx, in, length);
-            partialRemaining = length - readableBytes;
             readableBytes = 0;
             st = STATE_PARTIAL_PAYLOAD;
           }
           break;
 
         case STATE_PARTIAL_PAYLOAD:
-          int remaining = partialRemaining;
-          int toRead = Math.min(readableBytes, remaining);
           ByteBuf partial = partialPayload;
+          int remaining = partial.capacity() - partial.writerIndex();
+          int toRead = Math.min(readableBytes, remaining);
           partial.writeBytes(in, toRead);
           remaining -= toRead;
           readableBytes -= toRead;
           if (remaining == 0) {
             partialPayload = null;
+            int opcodeFin = decodeFlags(encodedSt);
+            int opcode = decodeFlagOpcode(opcodeFin);
+            boolean fin = decodeFlagFin(opcodeFin);
             onFrameRead(ctx, fin, opcode, partial);
             st = STATE_NON_PARTIAL;
-          } else {
-            partialRemaining = remaining;
           }
           break;
 
@@ -160,20 +157,80 @@ final class SmallWebSocketDecoder extends WebSocketDecoder {
           break;
 
         default:
-          throw new IllegalStateException("unexpected decoding state: " + state);
+          throw new IllegalStateException("unexpected decoding state: " + st);
       }
     }
-    state = st;
+    encodedState = encodeState(encodedSt, st);
   }
 
   @Override
   void closeInbound() {
-    state = STATE_CLOSED_INBOUND;
+    encodedState = encodeState(encodedState, STATE_CLOSED_INBOUND);
   }
 
   static ByteBuf partialPayload(ChannelHandlerContext ctx, ByteBuf in, int length) {
     ByteBuf partial = ctx.alloc().buffer(length);
     partial.writeBytes(in);
     return partial;
+  }
+
+  /* layout description is on "encodedState" field */
+
+  static int encodeState(int encodedState, int state) {
+    return encodedState & 0xFF_FF_FF_FC | state;
+  }
+
+  static int decodeState(int encodedState) {
+    return encodedState & 0x3;
+  }
+
+  static int encodeFlags(int encodedState, int opcode, boolean fin) {
+    int flags = (fin ? (byte) 1 : 0) << 6 | opcode << 2;
+    return encodedState & 0xFF_FF_FF_F3 | flags;
+  }
+
+  static int decodeFlags(int encodedState) {
+    return (encodedState & 0xFC) >> 2;
+  }
+
+  static int decodeFlagOpcode(int flags) {
+    return flags & 0xF;
+  }
+
+  static boolean decodeFlagFin(int flags) {
+    return (flags & 0x10) == 0x10;
+  }
+
+  static int encodePartialPrefix(int encodedState, byte partialPrefix) {
+    return encodedState & 0xFF_FF_00_FF | (partialPrefix << 8) & 0xFFFF;
+  }
+
+  static int decodePartialPrefix(int encodedState) {
+    return encodedState & 0xFF_00;
+  }
+
+  static int encodeFragmentedLength(int encodedState, int fragmentedTotalLength) {
+    return encodedState & 0xFF_FF | fragmentedTotalLength << 16;
+  }
+
+  /* non-negative value means fragmentation is in progress*/
+  static int decodeFragmentedLength(int encodedState) {
+    return (byte) ((encodedState & 0xFF_00_00) >> 16);
+  }
+
+  static final class WithMaskingEncoder extends SmallWebSocketDecoder {
+
+    @Override
+    WebSocketFrameFactory frameFactory() {
+      return MaskingWebSocketEncoder.FrameFactory.INSTANCE;
+    }
+  }
+
+  static final class WithNonMaskingEncoder extends SmallWebSocketDecoder {
+
+    @Override
+    WebSocketFrameFactory frameFactory() {
+      return NonMaskingWebSocketEncoder.FrameFactory.INSTANCE;
+    }
   }
 }

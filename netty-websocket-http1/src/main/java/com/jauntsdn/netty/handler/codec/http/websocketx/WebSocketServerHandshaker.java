@@ -41,6 +41,7 @@ public final class WebSocketServerHandshaker extends WebSocketServerHandshaker13
     WebSocketDecoderConfig decoderConfig = decoderConfig();
 
     return WebSocketCallbacksFrameDecoder.frameDecoder(
+        false,
         decoderConfig.maxFramePayloadLength(),
         decoderConfig.expectMaskedFrames(),
         decoderConfig.allowMaskMismatch());

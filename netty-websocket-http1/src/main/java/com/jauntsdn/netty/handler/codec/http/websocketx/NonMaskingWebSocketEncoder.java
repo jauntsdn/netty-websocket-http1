@@ -32,7 +32,7 @@ import java.nio.charset.StandardCharsets;
 final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     implements WebSocketCallbacksFrameEncoder {
 
-  static NonMaskingWebSocketEncoder INSTANCE = new NonMaskingWebSocketEncoder();
+  static final NonMaskingWebSocketEncoder INSTANCE = new NonMaskingWebSocketEncoder();
 
   private NonMaskingWebSocketEncoder() {}
 
@@ -129,13 +129,15 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     @Override
     public ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
       int frameSize = binaryFrame.readableBytes();
-      if (frameSize <= 127) {
-        int payloadSize = frameSize - 2;
+      int smallPrefixSize = 2;
+      if (frameSize <= 125 + smallPrefixSize) {
+        int payloadSize = frameSize - smallPrefixSize;
         return binaryFrame.setShort(0, BINARY_FRAME_SMALL | payloadSize);
       }
 
-      if (frameSize <= 65_539) {
-        int payloadSize = frameSize - 4;
+      int mediumPrefixSize = 4;
+      if (frameSize <= 65_535 + mediumPrefixSize) {
+        int payloadSize = frameSize - mediumPrefixSize;
         return binaryFrame.setInt(0, BINARY_FRAME_MEDIUM | payloadSize);
       }
       int payloadSize = frameSize - 8;
@@ -150,7 +152,7 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
       if (payloadSize < 65_535) {
         return payloadSize + 4;
       }
-      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 125));
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
     }
 
     static String payloadSizeLimit(int payloadSize, int limit) {

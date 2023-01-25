@@ -55,7 +55,7 @@ public final class WebSocketClientHandshaker extends WebSocketClientHandshaker13
   @Override
   protected WebSocketFrameDecoder newWebsocketDecoder() {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
-        maxFramePayloadLength(), expectMaskedFrames, allowMaskMismatch);
+        performMasking, maxFramePayloadLength(), expectMaskedFrames, allowMaskMismatch);
   }
 
   @Override

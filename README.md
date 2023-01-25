@@ -1,3 +1,6 @@
+![Maven Central](https://img.shields.io/maven-central/v/com.jauntsdn.netty/netty-websocket-http1)
+[![Build](https://github.com/jauntsdn/netty-websocket-http1/actions/workflows/ci-build.yml/badge.svg)](https://github.com/jauntsdn/netty-websocket-http1/actions/workflows/ci-build.yml)
+
 # netty-websocket-http1
 
 Alternative Netty implementation of [RFC6455](https://tools.ietf.org/html/rfc6455) - the WebSocket protocol. 
@@ -59,9 +62,10 @@ non-masked frames with 8, 64, 125, 1000 bytes of payload over encrypted/non-encr
 
 ### websocket-http2
 
-Library may be combined with [jauntsdn/websocket-http2](https://github.com/jauntsdn/netty-websocket-http2) using [http1 codec](https://github.com/jauntsdn/netty-websocket-http2/blob/develop/netty-websocket-http2/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/Http1WebSocketCodec.java) 
+Library may be combined with [jauntsdn/websocket-http2](https://github.com/jauntsdn/netty-websocket-http2) using [http1 codec](https://github.com/jauntsdn/netty-websocket-http2/blob/develop/netty-websocket-http2-callbacks-codec/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/WebSocketCallbacksCodec.java) 
 
-for significantly improved per-core throughput [this codec perf-test](), [netty built-in codec perf-test](): 
+for significantly improved per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/callbackscodec), 
+[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/messagecodec): 
 for 8, 125, 1000 byte payload frames over encrypted connection results are as follows:  
 
 | payload size | this codec, million msgs  | netty's codec, million msgs |
@@ -162,7 +166,7 @@ repositories {
 }
 
 dependencies {
-    implementation "com.jauntsdn.netty:netty-websocket-http1:<VERSION>"
+    implementation "com.jauntsdn.netty:netty-websocket-http1:0.9.0"
 }
 ```
 

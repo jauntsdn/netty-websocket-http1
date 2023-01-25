@@ -34,7 +34,7 @@ public final class WebSocketProtocol {
   public static final byte OPCODE_PONG = 0xA;
 
   /*validation*/
-  static final int VALIDATION_RESULT_INVALID = Integer.MIN_VALUE;
+  static final int VALIDATION_RESULT_INVALID = Byte.MIN_VALUE;
   static final int VALIDATION_RESULT_NON_FRAGMENTING = -1;
 
   static int validate(
@@ -203,7 +203,7 @@ public final class WebSocketProtocol {
       WebSocketDecoder webSocketDecoder,
       WebSocketCloseStatus status,
       String msg) {
-    WebSocketFrameFactory frameFactory = webSocketDecoder.frameFactory;
+    WebSocketFrameFactory frameFactory = webSocketDecoder.frameFactory();
     WebSocketFrameListener frameListener = webSocketDecoder.webSocketFrameListener;
 
     ByteBuf closeFrame =
@@ -220,8 +220,8 @@ public final class WebSocketProtocol {
       boolean expectMaskedFrames,
       boolean allowMaskMismatch) {
 
-    if (maxFramePayloadLength < 0 || maxFramePayloadLength > 65_535) {
-      throw new IllegalArgumentException("maxFramePayloadLength must be in range [0; 65535]");
+    if (maxFramePayloadLength < 125 || maxFramePayloadLength > 65_535) {
+      throw new IllegalArgumentException("maxFramePayloadLength must be in range [125; 65535]");
     }
     if (allowExtensions) {
       throw new IllegalArgumentException("extensions are not supported");
@@ -255,10 +255,21 @@ public final class WebSocketProtocol {
 
   /*for use with external websocket handlers, e.g. websocket-http2*/
 
+  /** @deprecated use {@link #frameDecoder(boolean, int, boolean, boolean)} instead */
+  @Deprecated
   public static WebSocketFrameDecoder frameDecoder(
       int maxFramePayloadLength, boolean expectMaskedFrames, boolean allowMaskMismatch) {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
         maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
+  }
+
+  public static WebSocketFrameDecoder frameDecoder(
+      boolean maskPayload,
+      int maxFramePayloadLength,
+      boolean expectMaskedFrames,
+      boolean allowMaskMismatch) {
+    return WebSocketCallbacksFrameDecoder.frameDecoder(
+        maskPayload, maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
   public static WebSocketFrameEncoder frameEncoder(boolean expectMaskedFrames) {
