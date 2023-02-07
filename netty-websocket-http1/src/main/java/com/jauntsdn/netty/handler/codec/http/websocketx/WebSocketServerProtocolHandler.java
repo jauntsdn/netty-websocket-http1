@@ -129,6 +129,9 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
                 } else {
                   WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
                   handshakeCompleted.trySuccess();
+                  ctx.fireUserEventTriggered(
+                      io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler
+                          .ServerHandshakeStateEvent.HANDSHAKE_COMPLETE);
                 }
                 ctx.pipeline().remove(this);
               });

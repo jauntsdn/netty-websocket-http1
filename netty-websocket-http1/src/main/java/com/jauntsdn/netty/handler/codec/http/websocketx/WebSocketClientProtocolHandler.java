@@ -118,6 +118,10 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
                 handshakeCompleted.tryFailure(cause);
                 ctx.fireExceptionCaught(cause);
                 cancelHandshakeTimeout();
+              } else {
+                ctx.fireUserEventTriggered(
+                    io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+                        .ClientHandshakeStateEvent.HANDSHAKE_ISSUED);
               }
             });
     startHandshakeTimeout(ctx, handshakeTimeoutMillis);
@@ -171,6 +175,9 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     ctx.pipeline().remove(this);
     WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
     handshakeCompleted.setSuccess();
+    ctx.fireUserEventTriggered(
+        io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+            .ClientHandshakeStateEvent.HANDSHAKE_COMPLETE);
   }
 
   private void startHandshakeTimeout(ChannelHandlerContext ctx, long timeoutMillis) {
@@ -179,6 +186,10 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
             .schedule(
                 () -> {
                   handshakeTimeoutFuture = null;
+                  ctx.flush();
+                  ctx.fireUserEventTriggered(
+                      io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+                          .ClientHandshakeStateEvent.HANDSHAKE_TIMEOUT);
                   ctx.close();
                 },
                 timeoutMillis,
