@@ -118,10 +118,20 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     if (handshaker == null) {
       WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(ctx.channel());
     } else {
-      handshaker.handshake(ctx.channel(), request);
-      ctx.pipeline().remove(this);
-      WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
-      handshakeCompleted.setSuccess();
+      handshaker
+          .handshake(ctx.channel(), request)
+          .addListener(
+              future -> {
+                Throwable cause = future.cause();
+                if (cause != null) {
+                  handshakeCompleted.tryFailure(cause);
+                  ctx.fireExceptionCaught(cause);
+                } else {
+                  WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
+                  handshakeCompleted.trySuccess();
+                }
+                ctx.pipeline().remove(this);
+              });
     }
   }
 

@@ -110,7 +110,16 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
                 mask,
                 expectMaskedFrames,
                 allowMaskMismatch);
-    h.handshake(ctx.channel());
+    h.handshake(ctx.channel())
+        .addListener(
+            future -> {
+              Throwable cause = future.cause();
+              if (cause != null) {
+                handshakeCompleted.tryFailure(cause);
+                ctx.fireExceptionCaught(cause);
+                cancelHandshakeTimeout();
+              }
+            });
     startHandshakeTimeout(ctx, handshakeTimeoutMillis);
   }
 
