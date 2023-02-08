@@ -16,13 +16,23 @@
 
 package com.jauntsdn.netty.handler.codec.http.websocketx;
 
+import static io.netty.handler.codec.http.HttpMethod.GET;
+import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
+import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
+
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
+import io.netty.handler.codec.http.websocketx.WebSocketHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory;
 import io.netty.util.concurrent.ScheduledFuture;
@@ -93,7 +103,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof FullHttpRequest) {
       FullHttpRequest request = (FullHttpRequest) msg;
-      if (!isWebSocketRequest(request)) {
+      if (!isWebSocketPath(request)) {
         super.channelRead(ctx, msg);
         return;
       }
@@ -107,7 +117,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     super.channelRead(ctx, msg);
   }
 
-  private boolean isWebSocketRequest(HttpRequest req) {
+  private boolean isWebSocketPath(HttpRequest req) {
     try {
       URI requestUri = new URI(req.uri());
       return path.equals(requestUri.getPath());
@@ -117,6 +127,12 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   }
 
   private void completeHandshake(ChannelHandlerContext ctx, HttpRequest request) {
+    if (!GET.equals(request.method())) {
+      ctx.writeAndFlush(new DefaultFullHttpResponse(HTTP_1_1, BAD_REQUEST, Unpooled.EMPTY_BUFFER))
+          .addListener(ChannelFutureListener.CLOSE);
+      return;
+    }
+
     WebSocketServerHandshaker.Factory handshakerFactory =
         new WebSocketServerHandshaker.Factory(path, subprotocols, decoderConfig);
 
@@ -125,29 +141,49 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(ctx.channel());
     } else {
       ChannelPromise handshake = handshakeCompleted;
-      ScheduledFuture<?> timeout = startHandshakeTimeout(ctx, handshakeTimeoutMillis, handshake);
 
-      handshaker
-          .handshake(ctx.channel(), request)
-          .addListener(
-              future -> {
-                if (timeout != null) {
-                  timeout.cancel(true);
-                }
-                Throwable cause = future.cause();
-                if (cause != null) {
-                  handshake.tryFailure(cause);
-                  ctx.fireExceptionCaught(cause);
-                } else {
-                  WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
-                  handshake.trySuccess();
-                  ctx.fireUserEventTriggered(
-                      io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler
-                          .ServerHandshakeStateEvent.HANDSHAKE_COMPLETE);
-                }
-                ctx.pipeline().remove(this);
-              });
+      ChannelFuture handshakeFuture;
+      /*netty's websocket handshaker throws exceptions instead of notifying handshake future*/
+      try {
+        handshakeFuture = handshaker.handshake(ctx.channel(), request);
+      } catch (Exception e) {
+        handleHandshakeResult(ctx, handshake, e);
+        return;
+      }
+      ScheduledFuture<?> timeout = startHandshakeTimeout(ctx, handshakeTimeoutMillis, handshake);
+      handshakeFuture.addListener(
+          future -> {
+            if (timeout != null) {
+              timeout.cancel(true);
+            }
+            handleHandshakeResult(ctx, handshake, future.cause());
+          });
     }
+  }
+
+  private void handleHandshakeResult(
+      ChannelHandlerContext ctx, ChannelPromise handshake, Throwable cause) {
+    if (cause != null) {
+      handshake.tryFailure(cause);
+      if (cause instanceof WebSocketHandshakeException) {
+        FullHttpResponse response =
+            new DefaultFullHttpResponse(
+                HTTP_1_1,
+                HttpResponseStatus.BAD_REQUEST,
+                Unpooled.wrappedBuffer(cause.getMessage().getBytes()));
+        ctx.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+      } else {
+        ctx.fireExceptionCaught(cause);
+        ctx.close();
+      }
+    } else {
+      WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
+      handshake.trySuccess();
+      ctx.fireUserEventTriggered(
+          io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler
+              .ServerHandshakeStateEvent.HANDSHAKE_COMPLETE);
+    }
+    ctx.pipeline().remove(this);
   }
 
   static ScheduledFuture<?> startHandshakeTimeout(
