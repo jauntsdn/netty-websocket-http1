@@ -16,18 +16,31 @@
 
 package com.jauntsdn.netty.handler.codec.http.websocketx;
 
+import static io.netty.handler.codec.http.HttpMethod.GET;
+import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
+import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
+
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
+import io.netty.handler.codec.http.websocketx.WebSocketHandshakeException;
+import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshakerFactory;
+import io.netty.util.concurrent.ScheduledFuture;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
 
 /**
@@ -37,6 +50,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   private final String path;
   private final String subprotocols;
   private final WebSocketDecoderConfig decoderConfig;
+  private final long handshakeTimeoutMillis;
   private final WebSocketCallbacksHandler webSocketHandler;
   private ChannelPromise handshakeCompleted;
 
@@ -48,10 +62,12 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       String path,
       String subprotocols,
       WebSocketDecoderConfig webSocketDecoderConfig,
+      long handshakeTimeoutMillis,
       WebSocketCallbacksHandler webSocketHandler) {
     this.path = path;
     this.subprotocols = subprotocols;
     this.decoderConfig = webSocketDecoderConfig;
+    this.handshakeTimeoutMillis = handshakeTimeoutMillis;
     this.webSocketHandler = webSocketHandler;
   }
 
@@ -78,7 +94,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     ChannelPromise completed = handshakeCompleted;
     if (!completed.isDone()) {
-      completed.setFailure(new ClosedChannelException());
+      completed.tryFailure(new ClosedChannelException());
     }
     super.channelInactive(ctx);
   }
@@ -87,7 +103,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
     if (msg instanceof FullHttpRequest) {
       FullHttpRequest request = (FullHttpRequest) msg;
-      if (!isWebSocketRequest(request)) {
+      if (!isWebSocketPath(request)) {
         super.channelRead(ctx, msg);
         return;
       }
@@ -101,7 +117,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     super.channelRead(ctx, msg);
   }
 
-  private boolean isWebSocketRequest(HttpRequest req) {
+  private boolean isWebSocketPath(HttpRequest req) {
     try {
       URI requestUri = new URI(req.uri());
       return path.equals(requestUri.getPath());
@@ -111,6 +127,12 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   }
 
   private void completeHandshake(ChannelHandlerContext ctx, HttpRequest request) {
+    if (!GET.equals(request.method())) {
+      ctx.writeAndFlush(new DefaultFullHttpResponse(HTTP_1_1, BAD_REQUEST, Unpooled.EMPTY_BUFFER))
+          .addListener(ChannelFutureListener.CLOSE);
+      return;
+    }
+
     WebSocketServerHandshaker.Factory handshakerFactory =
         new WebSocketServerHandshaker.Factory(path, subprotocols, decoderConfig);
 
@@ -118,11 +140,75 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     if (handshaker == null) {
       WebSocketServerHandshakerFactory.sendUnsupportedVersionResponse(ctx.channel());
     } else {
-      handshaker.handshake(ctx.channel(), request);
-      ctx.pipeline().remove(this);
-      WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
-      handshakeCompleted.setSuccess();
+      ChannelPromise handshake = handshakeCompleted;
+
+      ChannelFuture handshakeFuture;
+      /*netty's websocket handshaker throws exceptions instead of notifying handshake future*/
+      try {
+        handshakeFuture = handshaker.handshake(ctx.channel(), request);
+      } catch (Exception e) {
+        handleHandshakeResult(ctx, handshake, e);
+        return;
+      }
+      ScheduledFuture<?> timeout = startHandshakeTimeout(ctx, handshakeTimeoutMillis, handshake);
+      handshakeFuture.addListener(
+          future -> {
+            if (timeout != null) {
+              timeout.cancel(true);
+            }
+            handleHandshakeResult(ctx, handshake, future.cause());
+          });
     }
+  }
+
+  private void handleHandshakeResult(
+      ChannelHandlerContext ctx, ChannelPromise handshake, Throwable cause) {
+    if (cause != null) {
+      handshake.tryFailure(cause);
+      if (cause instanceof WebSocketHandshakeException) {
+        FullHttpResponse response =
+            new DefaultFullHttpResponse(
+                HTTP_1_1,
+                HttpResponseStatus.BAD_REQUEST,
+                Unpooled.wrappedBuffer(cause.getMessage().getBytes()));
+        ctx.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+      } else {
+        ctx.fireExceptionCaught(cause);
+        ctx.close();
+      }
+    } else {
+      WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
+      handshake.trySuccess();
+      ctx.fireUserEventTriggered(
+          io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler
+              .ServerHandshakeStateEvent.HANDSHAKE_COMPLETE);
+    }
+    ctx.pipeline().remove(this);
+  }
+
+  static ScheduledFuture<?> startHandshakeTimeout(
+      ChannelHandlerContext ctx, long handshakeTimeoutMillis, ChannelPromise handshake) {
+    if (handshakeTimeoutMillis > 0) {
+      return ctx.executor()
+          .schedule(
+              () -> {
+                if (!handshake.isDone()
+                    && handshake.tryFailure(
+                        new WebSocketServerHandshakeException(
+                            "websocket handshake timeout after "
+                                + handshakeTimeoutMillis
+                                + " millis"))) {
+                  ctx.flush();
+                  ctx.fireUserEventTriggered(
+                      io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler
+                          .ServerHandshakeStateEvent.HANDSHAKE_TIMEOUT);
+                  ctx.close();
+                }
+              },
+              handshakeTimeoutMillis,
+              TimeUnit.MILLISECONDS);
+    }
+    return null;
   }
 
   public static final class Builder {
@@ -139,6 +225,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     private String subprotocols;
     private WebSocketDecoderConfig decoderConfig = DEFAULT_DECODER_CONFIG;
     private WebSocketCallbacksHandler webSocketCallbacksHandler;
+    private long handshakeTimeoutMillis;
 
     private Builder() {}
 
@@ -179,6 +266,16 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     }
 
     /**
+     * @param handshakeTimeoutMillis webSocket handshake timeout
+     * @return this Builder instance
+     */
+    public Builder handshakeTimeoutMillis(long handshakeTimeoutMillis) {
+      this.handshakeTimeoutMillis =
+          requirePositive(handshakeTimeoutMillis, "handshakeTimeoutMillis");
+      return this;
+    }
+
+    /**
      * @param webSocketHandler handler to process successfully handshaked webSocket
      * @return this Builder instance
      */
@@ -193,7 +290,15 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       if (handler == null) {
         throw new IllegalStateException("webSocketCallbacksHandler was not provided");
       }
-      return new WebSocketServerProtocolHandler(path, subprotocols, decoderConfig, handler);
+      return new WebSocketServerProtocolHandler(
+          path, subprotocols, decoderConfig, handshakeTimeoutMillis, handler);
+    }
+
+    private static long requirePositive(long val, String desc) {
+      if (val <= 0) {
+        throw new IllegalArgumentException(desc + " must be positive, provided: " + val);
+      }
+      return val;
     }
   }
 }

@@ -60,6 +60,28 @@ public class WebSocketValidationTest {
     }
   }
 
+  @Test
+  void serverBuilderMinimalConfigIsValid() {
+    WebSocketServerProtocolHandler serverProtocolHandler =
+        WebSocketServerProtocolHandler.create()
+            .webSocketCallbacksHandler(
+                (ctx, webSocketFrameFactory) -> {
+                  throw new AssertionError("never called");
+                })
+            .build();
+  }
+
+  @Test
+  void clientBuilderMinimalConfigIsValid() {
+    WebSocketClientProtocolHandler clientProtocolHandler =
+        WebSocketClientProtocolHandler.create()
+            .webSocketHandler(
+                (ctx, webSocketFrameFactory) -> {
+                  throw new AssertionError("never called");
+                })
+            .build();
+  }
+
   @Timeout(15)
   @Test
   void frameSizeLimit() throws Exception {

@@ -22,6 +22,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.websocketx.WebSocketClientHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketHandshakeException;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.ScheduledFuture;
@@ -110,8 +111,21 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
                 mask,
                 expectMaskedFrames,
                 allowMaskMismatch);
-    h.handshake(ctx.channel());
     startHandshakeTimeout(ctx, handshakeTimeoutMillis);
+    h.handshake(ctx.channel())
+        .addListener(
+            future -> {
+              Throwable cause = future.cause();
+              if (cause != null) {
+                handshakeCompleted.tryFailure(cause);
+                ctx.fireExceptionCaught(cause);
+                cancelHandshakeTimeout();
+              } else {
+                ctx.fireUserEventTriggered(
+                    io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+                        .ClientHandshakeStateEvent.HANDSHAKE_ISSUED);
+              }
+            });
   }
 
   @Override
@@ -119,7 +133,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     cancelHandshakeTimeout();
     ChannelPromise completed = handshakeCompleted;
     if (!completed.isDone()) {
-      completed.setFailure(new ClosedChannelException());
+      completed.tryFailure(new ClosedChannelException());
     }
     super.channelInactive(ctx);
   }
@@ -153,15 +167,22 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     try {
       h.finishHandshake(ctx.channel(), response);
       handshaker = null;
-      cancelHandshakeTimeout();
-    } catch (WebSocketHandshakeException e) {
-      handshakeCompleted.setFailure(e);
+    } catch (Exception e) {
+      handshakeCompleted.tryFailure(e);
+      if (!(e instanceof WebSocketHandshakeException)) {
+        ctx.fireExceptionCaught(e);
+      }
       ctx.close();
       return;
+    } finally {
+      cancelHandshakeTimeout();
     }
     ctx.pipeline().remove(this);
     WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
-    handshakeCompleted.setSuccess();
+    handshakeCompleted.trySuccess();
+    ctx.fireUserEventTriggered(
+        io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+            .ClientHandshakeStateEvent.HANDSHAKE_COMPLETE);
   }
 
   private void startHandshakeTimeout(ChannelHandlerContext ctx, long timeoutMillis) {
@@ -170,7 +191,19 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
             .schedule(
                 () -> {
                   handshakeTimeoutFuture = null;
-                  ctx.close();
+                  ChannelPromise handshake = handshakeCompleted;
+                  if (!handshake.isDone()
+                      && handshake.tryFailure(
+                          new WebSocketClientHandshakeException(
+                              "websocket handshake timeout after "
+                                  + handshakeTimeoutMillis
+                                  + " millis"))) {
+                    ctx.flush();
+                    ctx.fireUserEventTriggered(
+                        io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+                            .ClientHandshakeStateEvent.HANDSHAKE_TIMEOUT);
+                    ctx.close();
+                  }
                 },
                 timeoutMillis,
                 TimeUnit.MILLISECONDS);
@@ -213,7 +246,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     private String subprotocol;
     private HttpHeaders headers;
     private boolean mask = true;
-    private boolean allowMaskMismatch;
+    private boolean allowMaskMismatch = true;
     private int maxFramePayloadLength = 65_535;
     private long handshakeTimeoutMillis = 15_000;
     private WebSocketCallbacksHandler webSocketHandler;

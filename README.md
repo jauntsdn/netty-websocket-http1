@@ -36,9 +36,16 @@ Per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-web
 comparison with netty's out-of-the-box websocket handlers: 
 non-masked frames with 8, 64, 125, 1000 bytes of payload over encrypted/non-encrypted connection.
 
+java 9+
 ```
 ./gradlew clean build installDist
 ./perf_server_run.sh
+./perf_client_run.sh
+```
+java 8
+```
+./gradlew clean build installDist
+./perf_server_java8_run.sh
 ./perf_client_run.sh
 ```
 
@@ -166,7 +173,7 @@ repositories {
 }
 
 dependencies {
-    implementation "com.jauntsdn.netty:netty-websocket-http1:0.9.0"
+    implementation "com.jauntsdn.netty:netty-websocket-http1:0.9.1"
 }
 ```
 
