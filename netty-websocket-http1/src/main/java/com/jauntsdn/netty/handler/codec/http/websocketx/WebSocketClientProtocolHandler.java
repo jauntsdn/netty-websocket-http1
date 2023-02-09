@@ -246,7 +246,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     private String subprotocol;
     private HttpHeaders headers;
     private boolean mask = true;
-    private boolean allowMaskMismatch;
+    private boolean allowMaskMismatch = true;
     private int maxFramePayloadLength = 65_535;
     private long handshakeTimeoutMillis = 15_000;
     private WebSocketCallbacksHandler webSocketHandler;
