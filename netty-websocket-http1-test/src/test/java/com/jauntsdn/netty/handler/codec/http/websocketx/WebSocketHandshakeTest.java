@@ -309,6 +309,7 @@ public class WebSocketHandshakeTest {
     Assertions.assertThat(client.isOpen()).isFalse();
   }
 
+  @SuppressWarnings("deprecation")
   @Timeout(15)
   @Test
   void serverHandshakeEvents() throws InterruptedException {

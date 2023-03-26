@@ -18,9 +18,8 @@ package com.jauntsdn.netty.handler.codec.http.websocketx;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandler;
 
-abstract class WebSocketDecoder implements ChannelInboundHandler, WebSocketCallbacksFrameDecoder {
+abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
 
   static final int STATE_NON_PARTIAL = 0;
   static final int STATE_PARTIAL_PREFIX = 1;
@@ -97,7 +96,6 @@ abstract class WebSocketDecoder implements ChannelInboundHandler, WebSocketCallb
     }
   }
 
-  @SuppressWarnings("deprecation")
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
     WebSocketFrameListener listener = webSocketFrameListener;

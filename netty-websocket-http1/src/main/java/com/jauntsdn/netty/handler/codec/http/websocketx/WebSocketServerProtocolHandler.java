@@ -166,6 +166,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     }
   }
 
+  @SuppressWarnings("deprecation")
   private void handleHandshakeResult(
       ChannelHandlerContext ctx,
       ChannelPromise handshake,
