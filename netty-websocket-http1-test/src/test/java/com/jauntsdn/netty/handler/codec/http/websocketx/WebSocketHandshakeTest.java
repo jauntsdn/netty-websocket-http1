@@ -42,6 +42,8 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.handler.codec.http.websocketx.WebSocketClientHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler.HandshakeComplete;
+import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler.ServerHandshakeStateEvent;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.DefaultPromise;
@@ -49,7 +51,9 @@ import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 import java.net.SocketAddress;
 import java.nio.channels.ClosedChannelException;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
@@ -305,9 +309,36 @@ public class WebSocketHandshakeTest {
     Assertions.assertThat(client.isOpen()).isFalse();
   }
 
+  @SuppressWarnings("deprecation")
+  @Timeout(15)
+  @Test
+  void serverHandshakeEvents() throws InterruptedException {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(false, true, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    String subprotocol = "subprotocol";
+    String path = "/";
+    Channel s = server = testServer(path, subprotocol, decoderConfig, serverHandler, null);
+    Channel client =
+        testClient(s.localAddress(), path, subprotocol, true, true, 65_535, clientHandler);
+    serverHandler.onOpen.join();
+    client.close();
+    serverHandler.onClose.join();
+    List<Object> events = serverHandler.events;
+    Assertions.assertThat(events).hasSize(2);
+    Assertions.assertThat(events.get(0)).isEqualTo(ServerHandshakeStateEvent.HANDSHAKE_COMPLETE);
+    Object event = serverHandler.events.get(1);
+    Assertions.assertThat(event).isExactlyInstanceOf(HandshakeComplete.class);
+    HandshakeComplete completeEvent = (HandshakeComplete) event;
+    Assertions.assertThat(completeEvent.requestUri()).isEqualTo(path);
+    Assertions.assertThat(completeEvent.requestHeaders()).isNotNull().isNotEmpty();
+    Assertions.assertThat(completeEvent.selectedSubprotocol()).isEqualTo(subprotocol);
+  }
+
   static Channel testClient(
       SocketAddress address,
       String path,
+      String subprotocol,
       boolean mask,
       boolean allowMaskMismatch,
       int maxFramePayloadLength,
@@ -331,6 +362,7 @@ public class WebSocketHandshakeTest {
                         .allowMaskMismatch(allowMaskMismatch)
                         .maxFramePayloadLength(maxFramePayloadLength)
                         .webSocketHandler(webSocketCallbacksHandler)
+                        .subprotocol(subprotocol)
                         .build();
 
                 ChannelPipeline pipeline = ch.pipeline();
@@ -340,6 +372,24 @@ public class WebSocketHandshakeTest {
         .connect(address)
         .sync()
         .channel();
+  }
+
+  static Channel testClient(
+      SocketAddress address,
+      String path,
+      boolean mask,
+      boolean allowMaskMismatch,
+      int maxFramePayloadLength,
+      WebSocketCallbacksHandler webSocketCallbacksHandler)
+      throws InterruptedException {
+    return testClient(
+        address,
+        path,
+        null,
+        mask,
+        allowMaskMismatch,
+        maxFramePayloadLength,
+        webSocketCallbacksHandler);
   }
 
   static Channel testServer(
@@ -356,12 +406,27 @@ public class WebSocketHandshakeTest {
       WebSocketCallbacksHandler webSocketCallbacksHandler,
       Consumer<Object> nonHandledMessageConsumer)
       throws InterruptedException {
+    return testServer(
+        path, null, decoderConfig, webSocketCallbacksHandler, nonHandledMessageConsumer);
+  }
+
+  static Channel testServer(
+      String path,
+      String subprotocol,
+      WebSocketDecoderConfig decoderConfig,
+      WebSocketCallbacksHandler webSocketCallbacksHandler,
+      Consumer<Object> nonHandledMessageConsumer)
+      throws InterruptedException {
     return new ServerBootstrap()
         .group(new NioEventLoopGroup(1))
         .channel(NioServerSocketChannel.class)
         .childHandler(
             new TestAcceptor(
-                path, decoderConfig, webSocketCallbacksHandler, nonHandledMessageConsumer))
+                path,
+                subprotocol,
+                decoderConfig,
+                webSocketCallbacksHandler,
+                nonHandledMessageConsumer))
         .bind("localhost", 0)
         .sync()
         .channel();
@@ -414,16 +479,19 @@ public class WebSocketHandshakeTest {
 
   static class TestAcceptor extends ChannelInitializer<SocketChannel> {
     private final String path;
+    private final String subprotocol;
     private final WebSocketDecoderConfig webSocketDecoderConfig;
     private final WebSocketCallbacksHandler webSocketCallbacksHandler;
     private final Consumer<Object> nonHandledMessageConsumer;
 
     TestAcceptor(
         String path,
+        String subprotocol,
         WebSocketDecoderConfig decoderConfig,
         WebSocketCallbacksHandler webSocketCallbacksHandler,
         Consumer<Object> nonHandledMessageConsumer) {
       this.path = path;
+      this.subprotocol = subprotocol;
       this.webSocketDecoderConfig = decoderConfig;
       this.webSocketCallbacksHandler = webSocketCallbacksHandler;
       this.nonHandledMessageConsumer = nonHandledMessageConsumer;
@@ -436,6 +504,7 @@ public class WebSocketHandshakeTest {
       WebSocketServerProtocolHandler webSocketProtocolHandler =
           WebSocketServerProtocolHandler.create()
               .path(path)
+              .subprotocols(subprotocol)
               .decoderConfig(webSocketDecoderConfig)
               .webSocketCallbacksHandler(webSocketCallbacksHandler)
               .build();
@@ -458,6 +527,7 @@ public class WebSocketHandshakeTest {
   static class TestWebSocketHandler implements WebSocketCallbacksHandler {
     final CompletableFuture<Void> onOpen = new CompletableFuture<>();
     final CompletableFuture<Void> onClose = new CompletableFuture<>();
+    final List<Object> events = new CopyOnWriteArrayList<>();
 
     volatile WebSocketFrameFactory webSocketFrameFactory;
     volatile Channel channel;
@@ -476,6 +546,11 @@ public class WebSocketHandshakeTest {
             int rsv,
             int opcode,
             ByteBuf payload) {}
+
+        @Override
+        public void onUserEventTriggered(ChannelHandlerContext ctx, Object evt) {
+          events.add(evt);
+        }
 
         @Override
         public void onOpen(ChannelHandlerContext ctx) {
