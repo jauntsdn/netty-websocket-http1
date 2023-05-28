@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.jauntsdn.netty.handler.codec.http.websocketx.perftest.client;
+package com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.client;
 
 import com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketCallbacksHandler;
 import com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler;

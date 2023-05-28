@@ -36,23 +36,23 @@ dependencies {
 
 task runServer(type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.server.Main"
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.server.Main"
 }
 
 task runClient(type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
-    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.client.Main"
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.client.Main"
 }
 
 task serverScripts(type: CreateStartScripts) {
-    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.server.Main"
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.server.Main"
     applicationName = "${project.name}-server"
     classpath = startScripts.classpath
     outputDir = startScripts.outputDir
 }
 
 task clientScripts(type: CreateStartScripts) {
-    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.client.Main"
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.client.Main"
     applicationName = "${project.name}-client"
     classpath = startScripts.classpath
     outputDir = startScripts.outputDir
