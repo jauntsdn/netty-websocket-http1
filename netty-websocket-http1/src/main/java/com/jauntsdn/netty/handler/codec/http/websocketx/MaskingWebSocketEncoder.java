@@ -48,7 +48,10 @@ final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     return FrameFactory.INSTANCE;
   }
 
-  static class FrameFactory implements WebSocketFrameFactory, WebSocketFrameFactory.Encoder {
+  static class FrameFactory
+      implements WebSocketFrameFactory,
+          WebSocketFrameFactory.Encoder,
+          WebSocketFrameFactory.BulkEncoder {
     static final int PREFIX_SIZE_SMALL = 6;
     static final int BINARY_FRAME_SMALL =
         OPCODE_BINARY << 8 | /*FIN*/ (byte) 1 << 15 | /*MASK*/ (byte) 1 << 7;
@@ -146,6 +149,11 @@ final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
+    public BulkEncoder bulkEncoder() {
+      return this;
+    }
+
+    @Override
     public ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
       int frameSize = binaryFrame.readableBytes();
       int smallPrefixSize = 6;
@@ -166,6 +174,30 @@ final class MaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
       }
       int payloadSize = frameSize - 12;
       throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
+    }
+
+    @Override
+    public int encodeBinaryFramePrefix(ByteBuf byteBuf, int payloadSize) {
+      if (payloadSize <= 125) {
+        byteBuf.writeShort(BINARY_FRAME_SMALL | payloadSize);
+        int mask = mask();
+        byteBuf.writeInt(mask);
+        return mask;
+      }
+
+      if (payloadSize <= 65_535) {
+        int mask = mask();
+        byteBuf.writeLong(((BINARY_FRAME_MEDIUM | (long) payloadSize) << 32) | mask);
+        return mask;
+      }
+      throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
+    }
+
+    @Override
+    public ByteBuf maskBinaryFrame(ByteBuf byteBuf, int mask, int payloadSize) {
+      int end = byteBuf.writerIndex();
+      int start = end - payloadSize;
+      return mask(mask, byteBuf, start, end);
     }
 
     @Override

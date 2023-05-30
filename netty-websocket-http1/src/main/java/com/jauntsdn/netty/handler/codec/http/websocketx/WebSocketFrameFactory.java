@@ -37,11 +37,26 @@ public interface WebSocketFrameFactory {
 
   Encoder encoder();
 
+  default BulkEncoder bulkEncoder() {
+    throw new UnsupportedOperationException("WebSocketFrameFactory.bulkEncoder() not implemented");
+  }
+
+  /** Encodes prefix of single binary websocket frame into provided bytebuffer. */
   interface Encoder {
-    /*write prefix/mask, apply mask if needed*/
+
     ByteBuf encodeBinaryFrame(ByteBuf binaryFrame);
 
-    /*size with prefix/mask*/
+    int sizeofBinaryFrame(int payloadSize);
+  }
+
+  /** Encodes prefixes of multiple binary websocket frames into provided bytebuffer. */
+  interface BulkEncoder {
+
+    /** @return frame mask, or -1 if masking not applicable */
+    int encodeBinaryFramePrefix(ByteBuf byteBuf, int payloadSize);
+
+    ByteBuf maskBinaryFrame(ByteBuf byteBuf, int mask, int payloadSize);
+
     int sizeofBinaryFrame(int payloadSize);
   }
 }
