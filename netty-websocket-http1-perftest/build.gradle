@@ -61,6 +61,33 @@ task clientScripts(type: CreateStartScripts) {
 startScripts.dependsOn serverScripts
 startScripts.dependsOn clientScripts
 
+task runBulkServer(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.server.Main"
+}
+
+task runBulkClient(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.client.Main"
+}
+
+task serverBulkScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.server.Main"
+    applicationName = "${project.name}-bulkserver"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+task clientBulkScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.client.Main"
+    applicationName = "${project.name}-bulkclient"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+startScripts.dependsOn serverBulkScripts
+startScripts.dependsOn clientBulkScripts
+
 tasks.named("startScripts") {
     enabled = false
 }
