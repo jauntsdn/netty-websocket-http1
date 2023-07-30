@@ -538,17 +538,6 @@ class WebSocketCodecTest {
     }
 
     @Override
-    public void onChannelWritabilityChanged(ChannelHandlerContext ctx) {
-      boolean writable = ctx.channel().isWritable();
-      if (sentFrames > 0 && writable) {
-        int toSend = framesCount - sentFrames;
-        if (toSend > 0) {
-          sendFrames(ctx, toSend);
-        }
-      }
-    }
-
-    @Override
     public void onOpen(ChannelHandlerContext ctx) {
       this.ctx = ctx;
       int bufferSize = 4 * framesCount;
@@ -600,9 +589,6 @@ class WebSocketCodecTest {
           outBuffer = c.alloc().buffer(bufferSize, bufferSize);
           if (c.channel().bytesBeforeUnwritable() < readableBytes) {
             c.writeAndFlush(out, c.voidPromise());
-            if (!c.channel().isWritable()) {
-              return;
-            }
           } else {
             c.write(out, c.voidPromise());
           }
@@ -615,7 +601,12 @@ class WebSocketCodecTest {
         frameEncoder.maskBinaryFrame(out, mask, payloadSize);
         sentFrames++;
       }
-      c.flush();
+      ByteBuf out = outBuffer;
+      if (out.readableBytes() > 0) {
+        c.writeAndFlush(out, c.voidPromise());
+      } else {
+        c.flush();
+      }
     }
   }
 
