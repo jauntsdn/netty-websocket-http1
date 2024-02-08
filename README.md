@@ -42,21 +42,6 @@ java 9+
 ./perf_server_run.sh
 ./perf_client_run.sh
 ```
-java 8
-```
-./gradlew clean build installDist
-./perf_server_java8_run.sh
-./perf_client_run.sh
-```
-
-* non-encrypted
-
-| payload size | this codec, million messages | netty's codec, million messages |
-| :---         |     :---:      |         :---: |
-| 8            | 2.45 | 1.35 |
-| 64           | 2.35 | 1.25 |
-| 125          | 2.3  | 1.15 |
-| 1000         | 1.15 | 0.64 |
 
 * encrypted
 
@@ -72,8 +57,9 @@ java 8
 Library may be combined with [jauntsdn/websocket-http2](https://github.com/jauntsdn/netty-websocket-http2) using [http1 codec](https://github.com/jauntsdn/netty-websocket-http2/blob/develop/netty-websocket-http2-callbacks-codec/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/WebSocketCallbacksCodec.java) 
 
 for significantly improved per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/callbackscodec), 
-[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/messagecodec): 
-for 8, 125, 1000 byte payload frames over encrypted connection results are as follows:  
+[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/messagecodec):  
+
+* encrypted
 
 | payload size | this codec, million msgs  | netty's codec, million msgs |
 | :---:        |     :---:     |        :---: |
@@ -144,7 +130,7 @@ server: `expectMasked: false, allowMaskMismatch: false, maxFramePayloadLength: 1
  
 client: `mask: false, allowMaskMismatch: false, maxFramePayloadLength: 125` 
 
-### testing
+### tests
 
 * WebSocket frames [integration test](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java): 
 control & data frames of all allowed sizes, jauntsdn/netty-websocket-http1 client, netty websocket server. 
@@ -173,7 +159,7 @@ repositories {
 }
 
 dependencies {
-    implementation "com.jauntsdn.netty:netty-websocket-http1:1.1.1"
+    implementation "com.jauntsdn.netty:netty-websocket-http1:1.1.2"
 }
 ```
 
