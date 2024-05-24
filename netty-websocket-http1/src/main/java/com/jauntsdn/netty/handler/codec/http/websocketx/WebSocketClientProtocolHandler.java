@@ -94,6 +94,11 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   }
 
   @Override
+  public boolean isSharable() {
+    return false;
+  }
+
+  @Override
   public void handlerAdded(ChannelHandlerContext ctx) {
     handshakeCompleted = ctx.newPromise();
   }
