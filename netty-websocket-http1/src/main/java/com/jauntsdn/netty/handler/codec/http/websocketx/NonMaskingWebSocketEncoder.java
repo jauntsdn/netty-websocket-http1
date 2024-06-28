@@ -176,10 +176,20 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     @Override
     public int encodeBinaryFramePrefix(ByteBuf byteBuf, int payloadSize) {
+      return encodeDataFramePrefix(byteBuf, payloadSize, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
+    }
+
+    @Override
+    public int encodeTextFramePrefix(ByteBuf byteBuf, int textPayloadSize) {
+      return encodeDataFramePrefix(byteBuf, textPayloadSize, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    static int encodeDataFramePrefix(
+        ByteBuf byteBuf, int payloadSize, int prefixSmall, int prefixMedium) {
       if (payloadSize <= 125) {
-        byteBuf.writeShort(BINARY_FRAME_SMALL | payloadSize);
+        byteBuf.writeShort(prefixSmall | payloadSize);
       } else if (payloadSize <= 65_535) {
-        byteBuf.writeInt(BINARY_FRAME_MEDIUM | payloadSize);
+        byteBuf.writeInt(prefixMedium | payloadSize);
       } else {
         throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
       }
@@ -188,6 +198,11 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     @Override
     public ByteBuf maskBinaryFrame(ByteBuf byteBuf, int mask, int payloadSize) {
+      return byteBuf;
+    }
+
+    @Override
+    public ByteBuf maskTextFrame(ByteBuf byteBuf, int mask, int textPayloadSize) {
       return byteBuf;
     }
 

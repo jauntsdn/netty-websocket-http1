@@ -73,5 +73,21 @@ public interface WebSocketFrameFactory {
     ByteBuf maskBinaryFrame(ByteBuf byteBuf, int mask, int payloadSize);
 
     int sizeofBinaryFrame(int payloadSize);
+
+    /** @return frame mask, or -1 if masking not applicable */
+    default int encodeTextFramePrefix(ByteBuf byteBuf, int textPayloadSize) {
+      throw new UnsupportedOperationException(
+          "WebSocketFrameFactory.BulkEncoder.encodeTextFramePrefix() not implemented");
+    }
+
+    default ByteBuf maskTextFrame(ByteBuf byteBuf, int mask, int textPayloadSize) {
+      throw new UnsupportedOperationException(
+          "WebSocketFrameFactory.BulkEncoder.maskTextFrame() not implemented");
+    }
+
+    default int sizeofTextFrame(int textPayloadSize) {
+      throw new UnsupportedOperationException(
+          "WebSocketFrameFactory.BulkEncoder.sizeofTextFrame() not implemented");
+    }
   }
 }

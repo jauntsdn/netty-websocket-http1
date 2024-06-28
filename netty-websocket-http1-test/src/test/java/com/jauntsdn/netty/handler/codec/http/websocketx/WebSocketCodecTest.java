@@ -139,6 +139,25 @@ class WebSocketCodecTest {
   @Timeout(300)
   @ValueSource(booleans = {true, false})
   @ParameterizedTest
+  void textFramesBulkEncoder(boolean mask) throws Exception {
+    int maxFrameSize = 1000;
+    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
+    TextFramesEncoderClientBulkHandler clientHandler =
+        new TextFramesEncoderClientBulkHandler(maxFrameSize, 'a');
+    Channel client =
+        webSocketCallbacksClient(s.localAddress(), mask, true, maxFrameSize, clientHandler);
+
+    WebSocketFrameFactory.BulkEncoder encoder = clientHandler.onHandshakeCompleted().join();
+    Assertions.assertThat(encoder).isNotNull();
+
+    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
+    onComplete.join();
+    client.close();
+  }
+
+  @Timeout(300)
+  @ValueSource(booleans = {true, false})
+  @ParameterizedTest
   void textFramesFactory(boolean mask) throws Exception {
     int maxFrameSize = DEFAULT_CODEC_MAX_FRAME_SIZE;
     Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
@@ -637,6 +656,159 @@ class WebSocketCodecTest {
           out.writeByte(0xFE);
         }
         frameEncoder.maskBinaryFrame(out, mask, payloadSize);
+        sentFrames++;
+      }
+      ByteBuf out = outBuffer;
+      if (out.readableBytes() > 0) {
+        c.writeAndFlush(out, c.voidPromise());
+      } else {
+        c.flush();
+      }
+    }
+  }
+
+  static class TextFramesEncoderClientBulkHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    private final CompletableFuture<WebSocketFrameFactory.BulkEncoder> onHandshakeComplete =
+        new CompletableFuture<>();
+    private final CompletableFuture<Void> onFrameExchangeComplete = new CompletableFuture<>();
+    private final int framesCount;
+    private final char expectedAsciiChar;
+    private WebSocketFrameFactory.BulkEncoder textFrameEncoder;
+    private int receivedFrames;
+    private int sentFrames;
+    private ByteBuf outBuffer;
+    private volatile ChannelHandlerContext ctx;
+
+    TextFramesEncoderClientBulkHandler(int maxFrameSize, char expectedAsciiChar) {
+      this.framesCount = maxFrameSize;
+      this.expectedAsciiChar = expectedAsciiChar;
+    }
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.textFrameEncoder = webSocketFrameFactory.bulkEncoder();
+      return this;
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (!finalFragment) {
+        onFrameExchangeComplete.completeExceptionally(
+            new AssertionError("received non-final frame: " + finalFragment));
+        payload.release();
+        return;
+      }
+      if (rsv != 0) {
+        onFrameExchangeComplete.completeExceptionally(
+            new AssertionError("received frame with non-zero rsv: " + rsv));
+        payload.release();
+        return;
+      }
+      if (opcode != WebSocketProtocol.OPCODE_TEXT) {
+        onFrameExchangeComplete.completeExceptionally(
+            new AssertionError("received non-text frame: " + Long.toHexString(opcode)));
+        payload.release();
+        return;
+      }
+
+      int readableBytes = payload.readableBytes();
+
+      int expectedSize = receivedFrames;
+      if (expectedSize != readableBytes) {
+        onFrameExchangeComplete.completeExceptionally(
+            new AssertionError(
+                "received frame of unexpected size: "
+                    + expectedSize
+                    + ", actual: "
+                    + readableBytes));
+        payload.release();
+        return;
+      }
+
+      for (int i = 0; i < readableBytes; i++) {
+        char ch = (char) payload.readByte();
+        if (ch != expectedAsciiChar) {
+          onFrameExchangeComplete.completeExceptionally(
+              new AssertionError(
+                  "received frame with unexpected content: "
+                      + ch
+                      + ", expected: "
+                      + expectedAsciiChar));
+          payload.release();
+          return;
+        }
+      }
+      payload.release();
+      if (++receivedFrames == framesCount) {
+        onFrameExchangeComplete.complete(null);
+      }
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      this.ctx = ctx;
+      int bufferSize = 4 * framesCount;
+      this.outBuffer = ctx.alloc().buffer(bufferSize, bufferSize);
+      onHandshakeComplete.complete(textFrameEncoder);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      ByteBuf out = outBuffer;
+      if (out != null) {
+        outBuffer = null;
+        out.release();
+      }
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(new ClosedChannelException());
+      }
+    }
+
+    @Override
+    public void onExceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(cause);
+      }
+    }
+
+    CompletableFuture<WebSocketFrameFactory.BulkEncoder> onHandshakeCompleted() {
+      return onHandshakeComplete;
+    }
+
+    CompletableFuture<Void> startFramesExchange() {
+      ChannelHandlerContext c = ctx;
+      c.executor().execute(() -> sendFrames(c, framesCount - sentFrames));
+      return onFrameExchangeComplete;
+    }
+
+    private void sendFrames(ChannelHandlerContext c, int toSend) {
+      WebSocketFrameFactory.BulkEncoder frameEncoder = textFrameEncoder;
+      for (int frameIdx = 0; frameIdx < toSend; frameIdx++) {
+        if (!c.channel().isOpen()) {
+          return;
+        }
+        int payloadSize = sentFrames;
+        int frameSize = frameEncoder.sizeofTextFrame(payloadSize);
+        ByteBuf out = outBuffer;
+        if (frameSize > out.capacity() - out.writerIndex()) {
+          int readableBytes = out.readableBytes();
+          int bufferSize = 4 * framesCount;
+          outBuffer = c.alloc().buffer(bufferSize, bufferSize);
+          if (c.channel().bytesBeforeUnwritable() < readableBytes) {
+            c.writeAndFlush(out, c.voidPromise());
+          } else {
+            c.write(out, c.voidPromise());
+          }
+          out = outBuffer;
+        }
+        int mask = frameEncoder.encodeTextFramePrefix(out, payloadSize);
+        for (int payloadIdx = 0; payloadIdx < payloadSize; payloadIdx++) {
+          out.writeByte(expectedAsciiChar);
+        }
+        frameEncoder.maskTextFrame(out, mask, payloadSize);
         sentFrames++;
       }
       ByteBuf out = outBuffer;
