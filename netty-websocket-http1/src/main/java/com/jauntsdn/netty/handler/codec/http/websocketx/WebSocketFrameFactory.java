@@ -52,6 +52,16 @@ public interface WebSocketFrameFactory {
     ByteBuf encodeBinaryFrame(ByteBuf binaryFrame);
 
     int sizeofBinaryFrame(int payloadSize);
+
+    default ByteBuf encodeTextFrame(ByteBuf textFrame) {
+      throw new UnsupportedOperationException(
+          "WebSocketFrameFactory.Encoder.encodeTextFrame() not implemented");
+    }
+
+    default int sizeofTextFrame(int textPayloadSize) {
+      throw new UnsupportedOperationException(
+          "WebSocketFrameFactory.Encoder.sizeofTextFrame() not implemented");
+    }
   }
 
   /** Encodes prefixes of multiple binary websocket frames into provided bytebuffer. */

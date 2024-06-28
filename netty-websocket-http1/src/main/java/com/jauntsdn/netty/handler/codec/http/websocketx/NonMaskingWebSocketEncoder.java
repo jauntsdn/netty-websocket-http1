@@ -149,17 +149,26 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     @Override
     public ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
+      return encodeDataFrame(binaryFrame, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeTextFrame(ByteBuf textFrame) {
+      return encodeDataFrame(textFrame, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    static ByteBuf encodeDataFrame(ByteBuf binaryFrame, int prefixSmall, int prefixMedium) {
       int frameSize = binaryFrame.readableBytes();
       int smallPrefixSize = 2;
       if (frameSize <= 125 + smallPrefixSize) {
         int payloadSize = frameSize - smallPrefixSize;
-        return binaryFrame.setShort(0, BINARY_FRAME_SMALL | payloadSize);
+        return binaryFrame.setShort(0, prefixSmall | payloadSize);
       }
 
       int mediumPrefixSize = 4;
       if (frameSize <= 65_535 + mediumPrefixSize) {
         int payloadSize = frameSize - mediumPrefixSize;
-        return binaryFrame.setInt(0, BINARY_FRAME_MEDIUM | payloadSize);
+        return binaryFrame.setInt(0, prefixMedium | payloadSize);
       }
       int payloadSize = frameSize - 8;
       throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
@@ -184,6 +193,15 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     @Override
     public int sizeofBinaryFrame(int payloadSize) {
+      return sizeOfDataFrame(payloadSize);
+    }
+
+    @Override
+    public int sizeofTextFrame(int textPayloadSize) {
+      return sizeOfDataFrame(textPayloadSize);
+    }
+
+    static int sizeOfDataFrame(int payloadSize) {
       if (payloadSize <= 125) {
         return payloadSize + 2;
       }
