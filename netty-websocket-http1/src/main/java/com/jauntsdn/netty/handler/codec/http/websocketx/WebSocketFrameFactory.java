@@ -27,6 +27,11 @@ public interface WebSocketFrameFactory {
 
   ByteBuf createBinaryFrame(ByteBufAllocator allocator, int binaryDataSize);
 
+  default ByteBuf createTextFrame(ByteBufAllocator allocator, int textDataSize) {
+    throw new UnsupportedOperationException(
+        "WebSocketFrameFactory.createTextFrame() not implemented");
+  }
+
   ByteBuf createCloseFrame(ByteBufAllocator allocator, int statusCode, String reason);
 
   ByteBuf createPingFrame(ByteBufAllocator allocator, int binaryDataSize);
