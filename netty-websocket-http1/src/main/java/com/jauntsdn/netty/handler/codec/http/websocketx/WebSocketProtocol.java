@@ -24,6 +24,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
+import io.netty.util.ByteProcessor;
 
 public final class WebSocketProtocol {
   public static final byte OPCODE_CONT = 0x0;
@@ -226,9 +227,6 @@ public final class WebSocketProtocol {
     if (allowExtensions) {
       throw new IllegalArgumentException("extensions are not supported");
     }
-    if (withUtf8Validator) {
-      throw new IllegalArgumentException("text frames UTF8 validation is not suppported");
-    }
     /*strict*/
     if (!allowMaskMismatch) {
       if (expectMaskedFrames) {
@@ -274,5 +272,83 @@ public final class WebSocketProtocol {
 
   public static WebSocketFrameEncoder frameEncoder(boolean expectMaskedFrames) {
     return WebSocketCallbacksFrameEncoder.frameEncoder(expectMaskedFrames);
+  }
+
+  public interface Utf8FrameValidator {
+
+    String UTF8_VALIDATION_ERROR = "inbound text frame with non-utf8 contents";
+    String UTF8_VALIDATOR_ERROR = "inbound text frame utf8 validator error";
+
+    /**
+     * Validates first and continuation fragment (FIN bit not set) text frames.
+     *
+     * @return true if text frame has valid utf8 content, false otherwise
+     */
+    boolean validateTextFragment(ByteBuf buffer, int start, int length);
+
+    /**
+     * Validates unfragmented and last fragment (FIN bit set) text frames.
+     *
+     * @return true if text frame has valid utf8 content, false otherwise
+     */
+    boolean validateTextFrame(ByteBuf buffer, int start, int length);
+  }
+
+  /* UTF8 finite state machine based implementation from https://bjoern.hoehrmann.de/utf-8/decoder/dfa/ */
+  static final class DefaultUtf8FrameValidator implements Utf8FrameValidator, ByteProcessor {
+
+    private static final int UTF8_ACCEPT = 0;
+    private static final int UTF8_REJECT = 12;
+
+    private static final byte[] TYPES = {
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+      9, 9, 9, 9, 9, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+      7, 7, 7, 7, 7, 7, 8, 8, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+      2, 2, 2, 2, 2, 2, 2, 10, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 11, 6, 6, 6, 5, 8, 8, 8,
+      8, 8, 8, 8, 8, 8, 8, 8
+    };
+
+    private static final byte[] STATES = {
+      0, 12, 24, 36, 60, 96, 84, 12, 12, 12, 48, 72, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
+      12, 0, 12, 12, 12, 12, 12, 0, 12, 0, 12, 12, 12, 24, 12, 12, 12, 12, 12, 24, 12, 24, 12, 12,
+      12, 12, 12, 12, 12, 12, 12, 24, 12, 12, 12, 12, 12, 24, 12, 12, 12, 12, 12, 12, 12, 24, 12,
+      12, 12, 12, 12, 12, 12, 12, 12, 36, 12, 36, 12, 12, 12, 36, 12, 12, 12, 12, 12, 36, 12, 36,
+      12, 12, 12, 36, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12
+    };
+
+    private int state = UTF8_ACCEPT;
+    private int codep;
+
+    @Override
+    public boolean validateTextFragment(ByteBuf buffer, int start, int length) {
+      buffer.forEachByte(start, length, this);
+      return state != UTF8_REJECT;
+    }
+
+    @Override
+    public boolean validateTextFrame(ByteBuf buffer, int start, int length) {
+      buffer.forEachByte(start, length, this);
+      codep = 0;
+      if (state != UTF8_ACCEPT) {
+        state = UTF8_ACCEPT;
+        return false;
+      }
+      return true;
+    }
+
+    @Override
+    public boolean process(byte bufferByte) {
+      byte type = TYPES[bufferByte & 0xFF];
+
+      codep = state != UTF8_ACCEPT ? bufferByte & 0x3f | codep << 6 : 0xff >> type & bufferByte;
+
+      state = STATES[state + type];
+
+      return state != UTF8_REJECT;
+    }
   }
 }

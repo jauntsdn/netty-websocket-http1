@@ -43,6 +43,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   private final String path;
   private final String subprotocol;
   private final HttpHeaders headers;
+  private final WebSocketProtocol.Utf8FrameValidator utf8FrameValidator;
   private final boolean mask;
   private final boolean expectMaskedFrames;
   private final boolean allowMaskMismatch;
@@ -58,6 +59,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       String path,
       String subprotocol,
       HttpHeaders headers,
+      @Nullable WebSocketProtocol.Utf8FrameValidator utf8FrameValidator,
       boolean mask,
       boolean expectMaskedFrames,
       boolean allowMaskMismatch,
@@ -68,6 +70,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     this.path = path;
     this.subprotocol = subprotocol;
     this.headers = headers;
+    this.utf8FrameValidator = utf8FrameValidator;
     this.mask = mask;
     this.expectMaskedFrames = expectMaskedFrames;
     this.allowMaskMismatch = allowMaskMismatch;
@@ -255,6 +258,8 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     private int maxFramePayloadLength = 65_535;
     private long handshakeTimeoutMillis = 15_000;
     private WebSocketCallbacksHandler webSocketHandler;
+    private WebSocketProtocol.Utf8FrameValidator utf8FrameValidator;
+    private boolean utf8ValidationEnabled = true;
 
     private Builder() {}
 
@@ -348,6 +353,26 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       return this;
     }
 
+    /**
+     * @param utf8FrameValidator sets utf8 validator for inbound text frames and fragments. Applied
+     *     if utf8 validation is enabled by {@link #withUtf8Validator(boolean)}
+     * @return this Builder instance
+     */
+    public Builder utf8Validator(
+        @Nullable WebSocketProtocol.Utf8FrameValidator utf8FrameValidator) {
+      this.utf8FrameValidator = utf8FrameValidator;
+      return this;
+    }
+
+    /**
+     * @param utf8ValidatorEnabled enables utf8 validation for inbound text frames and fragments.
+     * @return this Builder instance
+     */
+    public Builder withUtf8Validator(boolean utf8ValidatorEnabled) {
+      this.utf8ValidationEnabled = utf8ValidatorEnabled;
+      return this;
+    }
+
     /** @return new WebSocketClientProtocolHandler instance */
     public WebSocketClientProtocolHandler build() {
       if (webSocketHandler == null) {
@@ -355,15 +380,22 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       }
       int maxPayloadLength = maxFramePayloadLength;
       boolean maskMismatch = allowMaskMismatch;
+      boolean utf8Validation = utf8ValidationEnabled;
 
       WebSocketProtocol.validateDecoderConfig(
-          maxPayloadLength, false, false, EXPECT_MASKED_FRAMES, maskMismatch);
-
+          maxPayloadLength, false, utf8Validation, EXPECT_MASKED_FRAMES, maskMismatch);
+      WebSocketProtocol.Utf8FrameValidator utf8Validator = null;
+      if (utf8Validation) {
+        WebSocketProtocol.Utf8FrameValidator provided = utf8FrameValidator;
+        utf8Validator =
+            provided != null ? provided : new WebSocketProtocol.DefaultUtf8FrameValidator();
+      }
       return new WebSocketClientProtocolHandler(
           address,
           path,
           subprotocol,
           headers,
+          utf8Validator,
           mask,
           EXPECT_MASKED_FRAMES,
           maskMismatch,

@@ -52,6 +52,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   private final String path;
   private final String subprotocols;
   private final WebSocketDecoderConfig decoderConfig;
+  private final WebSocketProtocol.Utf8FrameValidator utf8FrameValidator;
   private final long handshakeTimeoutMillis;
   private final WebSocketCallbacksHandler webSocketHandler;
   private ChannelPromise handshakeCompleted;
@@ -64,11 +65,13 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       String path,
       String subprotocols,
       WebSocketDecoderConfig webSocketDecoderConfig,
+      @Nullable WebSocketProtocol.Utf8FrameValidator utf8FrameValidator,
       long handshakeTimeoutMillis,
       WebSocketCallbacksHandler webSocketHandler) {
     this.path = path;
     this.subprotocols = subprotocols;
     this.decoderConfig = webSocketDecoderConfig;
+    this.utf8FrameValidator = utf8FrameValidator;
     this.handshakeTimeoutMillis = handshakeTimeoutMillis;
     this.webSocketHandler = webSocketHandler;
   }
@@ -238,7 +241,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
             .allowExtensions(false)
             .expectMaskedFrames(true)
             .allowMaskMismatch(true)
-            .withUTF8Validator(false)
+            .withUTF8Validator(true)
             .build();
 
     private String path = "/";
@@ -246,6 +249,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     private WebSocketDecoderConfig decoderConfig = DEFAULT_DECODER_CONFIG;
     private WebSocketCallbacksHandler webSocketCallbacksHandler;
     private long handshakeTimeoutMillis;
+    private WebSocketProtocol.Utf8FrameValidator utf8FrameValidator;
 
     private Builder() {}
 
@@ -286,6 +290,17 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     }
 
     /**
+     * @param utf8FrameValidator sets utf8 validator for inbound text frames and fragments. Applied
+     *     if utf8 validation is enabled by {@link #decoderConfig(WebSocketDecoderConfig)}
+     * @return this Builder instance
+     */
+    public Builder utf8Validator(
+        @Nullable WebSocketProtocol.Utf8FrameValidator utf8FrameValidator) {
+      this.utf8FrameValidator = utf8FrameValidator;
+      return this;
+    }
+
+    /**
      * @param handshakeTimeoutMillis webSocket handshake timeout
      * @return this Builder instance
      */
@@ -310,8 +325,14 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       if (handler == null) {
         throw new IllegalStateException("webSocketCallbacksHandler was not provided");
       }
+      WebSocketProtocol.Utf8FrameValidator utf8Validator = null;
+      if (decoderConfig.withUTF8Validator()) {
+        WebSocketProtocol.Utf8FrameValidator provided = utf8FrameValidator;
+        utf8Validator =
+            provided != null ? provided : new WebSocketProtocol.DefaultUtf8FrameValidator();
+      }
       return new WebSocketServerProtocolHandler(
-          path, subprotocols, decoderConfig, handshakeTimeoutMillis, handler);
+          path, subprotocols, decoderConfig, utf8Validator, handshakeTimeoutMillis, handler);
     }
 
     private static long requirePositive(long val, String desc) {
