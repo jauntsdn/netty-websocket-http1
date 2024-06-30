@@ -56,6 +56,11 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     static final int BINARY_FRAME_SMALL = OPCODE_BINARY << 8 | /*FIN*/ (byte) 1 << 15;
     static final int TEXT_FRAME_SMALL = OPCODE_TEXT << 8 | /*FIN*/ (byte) 1 << 15;
 
+    static final int BINARY_FRAGMENT_START_SMALL = OPCODE_BINARY << 8;
+    static final int TEXT_FRAGMENT_START_SMALL = OPCODE_TEXT << 8;
+    static final int DATA_FRAGMENT_CONTINUATION_SMALL = 0;
+    static final int DATA_FRAGMENT_CONTINUATION_END_SMALL = /*FIN*/ (byte) 1 << 15;
+
     static final int CLOSE_FRAME = OPCODE_CLOSE << 8 | /*FIN*/ (byte) 1 << 15;
     static final int PING_FRAME = OPCODE_PING << 8 | /*FIN*/ (byte) 1 << 15;
     static final int PONG_FRAME = OPCODE_PONG << 8 | /*FIN*/ (byte) 1 << 15;
@@ -63,6 +68,15 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     static final int PREFIX_SIZE_MEDIUM = 4;
     static final int BINARY_FRAME_MEDIUM = (BINARY_FRAME_SMALL | /*LEN*/ (byte) 126) << 16;
     static final int TEXT_FRAME_MEDIUM = (TEXT_FRAME_SMALL | /*LEN*/ (byte) 126) << 16;
+
+    static final int BINARY_FRAGMENT_START_MEDIUM =
+        (BINARY_FRAGMENT_START_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int TEXT_FRAGMENT_START_MEDIUM =
+        (TEXT_FRAGMENT_START_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int DATA_FRAGMENT_CONTINUATION_MEDIUM =
+        (DATA_FRAGMENT_CONTINUATION_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int DATA_FRAGMENT_CONTINUATION_END_MEDIUM =
+        (DATA_FRAGMENT_CONTINUATION_END_SMALL | /*LEN*/ (byte) 126) << 16;
 
     static final WebSocketFrameFactory INSTANCE = new FrameFactory();
 
@@ -90,6 +104,33 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     @Override
     public ByteBuf createTextFrame(ByteBufAllocator allocator, int textDataSize) {
       return createDataFrame(allocator, textDataSize, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createBinaryFragmentStart(ByteBufAllocator allocator, int binaryDataSize) {
+      return createDataFrame(
+          allocator, binaryDataSize, BINARY_FRAGMENT_START_SMALL, BINARY_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createTextFragmentStart(ByteBufAllocator allocator, int textDataSize) {
+      return createDataFrame(
+          allocator, textDataSize, TEXT_FRAGMENT_START_SMALL, TEXT_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createContinuationFragment(ByteBufAllocator allocator, int dataSize) {
+      return createDataFrame(
+          allocator, dataSize, DATA_FRAGMENT_CONTINUATION_SMALL, DATA_FRAGMENT_CONTINUATION_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createContinuationFragmentEnd(ByteBufAllocator allocator, int dataSize) {
+      return createDataFrame(
+          allocator,
+          dataSize,
+          DATA_FRAGMENT_CONTINUATION_END_SMALL,
+          DATA_FRAGMENT_CONTINUATION_END_MEDIUM);
     }
 
     @Override
@@ -155,6 +196,36 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     @Override
     public ByteBuf encodeTextFrame(ByteBuf textFrame) {
       return encodeDataFrame(textFrame, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeBinaryFragmentStart(ByteBuf fragmentFrame) {
+      return encodeDataFrame(
+          fragmentFrame, BINARY_FRAGMENT_START_SMALL, BINARY_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeTextFragmentStart(ByteBuf fragmentFrame) {
+      return encodeDataFrame(fragmentFrame, TEXT_FRAGMENT_START_SMALL, TEXT_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeContinuationFragment(ByteBuf fragmentFrame) {
+      return encodeDataFrame(
+          fragmentFrame, DATA_FRAGMENT_CONTINUATION_SMALL, DATA_FRAGMENT_CONTINUATION_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeContinuationFragmentEnd(ByteBuf fragmentFrame) {
+      return encodeDataFrame(
+          fragmentFrame,
+          DATA_FRAGMENT_CONTINUATION_END_SMALL,
+          DATA_FRAGMENT_CONTINUATION_END_MEDIUM);
+    }
+
+    @Override
+    public int sizeofFragment(int payloadSize) {
+      return sizeOfDataFrame(payloadSize);
     }
 
     static ByteBuf encodeDataFrame(ByteBuf binaryFrame, int prefixSmall, int prefixMedium) {
