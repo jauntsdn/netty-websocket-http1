@@ -5,29 +5,32 @@
 
 Alternative Netty implementation of [RFC6455](https://tools.ietf.org/html/rfc6455) - the WebSocket protocol. 
 
-Its advantage is significant per-core throughput improvement (1.8 - 2x) for small frames in comparison to netty's out-of-the-box 
-websocket codecs, and minimal heap allocations on frame path. Library is compatible with 
+Its advantages are significant per-core throughput improvement (1.8 - 2x) for small frames compared to netty's out-of-the-box 
+websocket codecs, minimal heap allocations on frame path, and compatibility with 
 [netty-websocket-http2](https://github.com/jauntsdn/netty-websocket-http2).
 
 ### use case & scope
 
-* Intended for efficiently encoded, dense binary data: no extensions (compression) support / outbound text frames / inbound 
-utf8 validation.
-
-* Library assumes small frames - many have payload <= 125 bytes, most are < 1500, maximum supported is 65k (65535 bytes).
-
-* Just codec - fragments, pings, close frames are decoded & validated only. It is responsibility of user code 
-to handle frames according to protocol (reassemble frame fragments, perform graceful close, 
-respond to pings).
-
-* Dedicated decoder for case of exchanging tiny messages over TLS connection: 
-only non-masked frames with <= 125 bytes of payload for minimal per-webSocket state (memory) overhead.
+* Intended for dense binary data & small text messages: no extensions (compression) support.
 
 * No per-frame heap allocations in websocket frameFactory / decoder.
 
+* Library assumes small frames - many have payload <= 125 bytes, most are < 1500, maximum supported is 65k (65535 bytes).
+
+* Just codec - fragments, pings, close frames are decoded & protocol validated only. It is responsibility of user code 
+to handle frames according to protocol (reassemble frame fragments, perform graceful close, 
+respond to pings) and do utf8 validation of inbound text frames ([utility](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketFrameListener.java#L81) is provided).
+
 * Single-threaded (transport IO event-loop) callbacks / frame factory API - 
-in practice user code has its own message types to carry data, external means (e.g. mpsc / spsc queues) may be used to 
+in practice user code has its own message types to carry data, and external means (e.g. mpsc / spsc queues) may be used to 
 properly publish messages on eventloop thread.
+
+* On encoder side 3 use cases are supported: frame factory [[1]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L1475) (create bytebuffer and encode frame prefix), 
+frame encoder [[2]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L1019) (encode frame prefix into provided bytebuffer), 
+frame bulk-encoder [[3]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L707) (much more performant - encode multiple frames into provided bytebuffer).
+
+* Dedicated decoder for case of exchanging tiny messages over TLS connection: 
+only non-masked frames with <= 125 bytes of payload for minimal per-webSocket state (memory) overhead.
 
 ### performance
 
@@ -77,6 +80,11 @@ to create outbound frames. It is library user responsibility to mask outbound fr
 public interface WebSocketFrameFactory {
 
   ByteBuf createBinaryFrame(ByteBufAllocator allocator, int binaryDataSize);
+  
+  // ByteBuf createTextFrame(ByteBufAllocator allocator, int binaryDataSize);
+  
+  // ByteBuf create*Fragment*(ByteBufAllocator allocator, int textDataSize);
+
   // create*Frame are omitted for control frames, created in similar fashion
 
   ByteBuf mask(ByteBuf frame);
