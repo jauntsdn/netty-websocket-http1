@@ -19,6 +19,8 @@ package com.jauntsdn.netty.handler.codec.http.websocketx;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
@@ -37,7 +39,9 @@ import io.netty.util.ReferenceCountUtil;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -265,6 +269,40 @@ public class WebSocketValidationTest {
           .isEqualTo(WebSocketCloseStatus.PROTOCOL_ERROR.code());
     } finally {
       closeFrames.forEach(ByteBuf::release);
+    }
+  }
+
+  @Test
+  void utf8TextFrameValidator() {
+    ByteBufAllocator alloc = ByteBufAllocator.DEFAULT;
+    List<ByteBuf> utf8 =
+        Arrays.asList(
+            ByteBufUtil.writeUtf8(alloc, "ab"),
+            ByteBufUtil.writeUtf8(alloc, "c"),
+            ByteBufUtil.writeUtf8(alloc, "def"),
+            ByteBufUtil.writeUtf8(alloc, "ghijk"),
+            ByteBufUtil.writeUtf8(alloc, "lmn"));
+    ByteBuf nonUtf8 = alloc.buffer(2).writeByte(0xc3).writeByte(0x28);
+
+    WebSocketFrameListener.Utf8FrameValidator validator =
+        WebSocketFrameListener.Utf8FrameValidator.create();
+
+    try {
+      Assertions.assertThat(validator.validateTextFrame(utf8.get(0))).isTrue();
+      Assertions.assertThat(validator.state).isEqualTo(0);
+      Assertions.assertThat(validator.codep).isEqualTo(0);
+      Assertions.assertThat(validator.validateTextFragmentStart(utf8.get(1))).isTrue();
+      Assertions.assertThat(validator.validateFragmentContinuation(utf8.get(2))).isTrue();
+      Assertions.assertThat(validator.validateFragmentEnd(utf8.get(3))).isTrue();
+      Assertions.assertThat(validator.state).isEqualTo(0);
+      Assertions.assertThat(validator.codep).isEqualTo(0);
+      Assertions.assertThat(validator.validateTextFrame(utf8.get(4))).isTrue();
+      Assertions.assertThat(validator.validateTextFrame(nonUtf8)).isFalse();
+    } finally {
+      for (ByteBuf string : utf8) {
+        string.release();
+      }
+      nonUtf8.release();
     }
   }
 
