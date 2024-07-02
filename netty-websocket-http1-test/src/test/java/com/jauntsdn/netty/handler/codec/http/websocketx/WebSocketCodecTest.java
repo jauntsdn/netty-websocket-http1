@@ -158,6 +158,78 @@ class WebSocketCodecTest {
   @Timeout(300)
   @ValueSource(booleans = {true, false})
   @ParameterizedTest
+  void binaryFramesFragmentsEncoder(boolean mask) throws Exception {
+    int maxFrameSize = 3_000;
+    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
+    OutboundBinaryFragmentationEncoderClientHandler clientHandler =
+        new OutboundBinaryFragmentationEncoderClientHandler(maxFrameSize / 3 - 1);
+    Channel client =
+        webSocketCallbacksClient(s.localAddress(), mask, true, maxFrameSize, clientHandler);
+
+    clientHandler.onHandshakeCompleted().join();
+
+    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
+    onComplete.join();
+    client.close();
+  }
+
+  @Timeout(300)
+  @ValueSource(booleans = {true, false})
+  @ParameterizedTest
+  void binaryFramesFragmentsFactory(boolean mask) throws Exception {
+    int maxFrameSize = 3_000;
+    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
+    OutboundBinaryFragmentationClientHandler clientHandler =
+        new OutboundBinaryFragmentationClientHandler(maxFrameSize / 3 - 1);
+    Channel client =
+        webSocketCallbacksClient(s.localAddress(), mask, true, maxFrameSize, clientHandler);
+
+    clientHandler.onHandshakeCompleted().join();
+
+    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
+    onComplete.join();
+    client.close();
+  }
+
+  @Timeout(300)
+  @ValueSource(booleans = {true, false})
+  @ParameterizedTest
+  void textFramesFragmentsEncoder(boolean mask) throws Exception {
+    int maxFrameSize = 3_000;
+    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
+    OutboundTextFragmentationEncoderClientHandler clientHandler =
+        new OutboundTextFragmentationEncoderClientHandler(maxFrameSize / 3 - 1, 'a');
+    Channel client =
+        webSocketCallbacksClient(s.localAddress(), mask, true, maxFrameSize, clientHandler);
+
+    clientHandler.onHandshakeCompleted().join();
+
+    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
+    onComplete.join();
+    client.close();
+  }
+
+  @Timeout(300)
+  @ValueSource(booleans = {true, false})
+  @ParameterizedTest
+  void textFramesFragmentsFactory(boolean mask) throws Exception {
+    int maxFrameSize = 3_000;
+    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
+    OutboundTextFragmentationClientHandler clientHandler =
+        new OutboundTextFragmentationClientHandler(maxFrameSize / 3 - 1, 'a');
+    Channel client =
+        webSocketCallbacksClient(s.localAddress(), mask, true, maxFrameSize, clientHandler);
+
+    clientHandler.onHandshakeCompleted().join();
+
+    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
+    onComplete.join();
+    client.close();
+  }
+
+  @Timeout(300)
+  @ValueSource(booleans = {true, false})
+  @ParameterizedTest
   void textFramesFactory(boolean mask) throws Exception {
     int maxFrameSize = DEFAULT_CODEC_MAX_FRAME_SIZE;
     Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), mask, false);
@@ -393,8 +465,8 @@ class WebSocketCodecTest {
     int maxFrameSize = DEFAULT_CODEC_MAX_FRAME_SIZE;
 
     Channel s = server = nettyServer(new FragmentTestServerHandler(1500), mask, false);
-    FragmentationFramesTestClientHandler clientHandler =
-        new FragmentationFramesTestClientHandler(3333);
+    InboundFragmentationFramesTestClientHandler clientHandler =
+        new InboundFragmentationFramesTestClientHandler(3333);
     Channel client =
         webSocketCallbacksClient(s.localAddress(), mask, true, maxFrameSize, clientHandler);
 
@@ -413,8 +485,8 @@ class WebSocketCodecTest {
     int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
 
     Channel s = server = nettyServer(new FragmentTestServerHandler(33), false, false);
-    FragmentationFramesTestClientHandler clientHandler =
-        new FragmentationFramesTestClientHandler(70);
+    InboundFragmentationFramesTestClientHandler clientHandler =
+        new InboundFragmentationFramesTestClientHandler(70);
     Channel client =
         webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
 
@@ -1517,7 +1589,7 @@ class WebSocketCodecTest {
     }
   }
 
-  static class FragmentationFramesTestClientHandler
+  static class InboundFragmentationFramesTestClientHandler
       implements WebSocketCallbacksHandler, WebSocketFrameListener {
     final CompletableFuture<WebSocketFrameFactory> onHandshakeComplete = new CompletableFuture<>();
     final CompletableFuture<Void> onFrameExchangeComplete = new CompletableFuture<>();
@@ -1525,7 +1597,7 @@ class WebSocketCodecTest {
     WebSocketFrameFactory webSocketFrameFactory;
     volatile ChannelHandlerContext ctx;
 
-    FragmentationFramesTestClientHandler(int frameSize) {
+    InboundFragmentationFramesTestClientHandler(int frameSize) {
       this.frameSize = frameSize;
     }
 
@@ -1635,6 +1707,605 @@ class WebSocketCodecTest {
         binaryFrame.writeByte(0xFE);
       }
       c.writeAndFlush(factory.mask(binaryFrame));
+    }
+  }
+
+  static class OutboundBinaryFragmentationEncoderClientHandler
+      extends OutboundBinaryFragmentationClientHandler {
+    OutboundBinaryFragmentationEncoderClientHandler(int frameSize) {
+      super(frameSize);
+    }
+
+    static ByteBuf withPayload(
+        ByteBufAllocator allocator, WebSocketFrameFactory.Encoder encoder, byte content, int size) {
+      int frameSize = encoder.sizeofBinaryFrame(size);
+      ByteBuf binaryFrame = allocator.buffer(frameSize);
+      binaryFrame.writerIndex(frameSize - size);
+      for (int i = 0; i < size; i++) {
+        binaryFrame.writeByte(content);
+      }
+      return binaryFrame;
+    }
+
+    @Override
+    protected void sendFrames(ChannelHandlerContext c) {
+      WebSocketFrameFactory.Encoder encoder = webSocketFrameFactory.encoder();
+      ByteBufAllocator allocator = c.alloc();
+      while (framesSent < frameSize) {
+        int size = ++framesSent;
+
+        ByteBuf shortFragmentStart =
+            encoder.encodeBinaryFragmentStart(withPayload(allocator, encoder, (byte) 0xFE, size));
+        ByteBuf shortFragmentEnd =
+            encoder.encodeContinuationFragmentEnd(
+                withPayload(allocator, encoder, (byte) 0xFE, size));
+
+        ByteBuf longFragmentStart =
+            encoder.encodeBinaryFragmentStart(withPayload(allocator, encoder, (byte) 0xFE, size));
+        ByteBuf longFragmentContinuation =
+            encoder.encodeContinuationFragment(withPayload(allocator, encoder, (byte) 0xFE, size));
+        ByteBuf longFragmentEnd =
+            encoder.encodeContinuationFragmentEnd(
+                withPayload(allocator, encoder, (byte) 0xFE, size));
+
+        ctx.write(shortFragmentStart);
+        ctx.write(shortFragmentEnd);
+        ctx.write(longFragmentStart);
+        ctx.write(longFragmentContinuation);
+        ctx.writeAndFlush(longFragmentEnd);
+      }
+    }
+  }
+
+  static class OutboundTextFragmentationEncoderClientHandler
+      extends OutboundTextFragmentationClientHandler {
+
+    OutboundTextFragmentationEncoderClientHandler(int frameSize, char expectedContent) {
+      super(frameSize, expectedContent);
+    }
+
+    static ByteBuf withPayload(
+        ByteBufAllocator allocator, WebSocketFrameFactory.Encoder encoder, char content, int size) {
+      int frameSize = encoder.sizeofTextFrame(size);
+      ByteBuf binaryFrame = allocator.buffer(frameSize);
+      binaryFrame.writerIndex(frameSize - size);
+      for (int i = 0; i < size; i++) {
+        binaryFrame.writeByte(content);
+      }
+      return binaryFrame;
+    }
+
+    @Override
+    protected void sendFrames(ChannelHandlerContext c) {
+      WebSocketFrameFactory.Encoder encoder = webSocketFrameFactory.encoder();
+      ByteBufAllocator allocator = c.alloc();
+      while (framesSent < frameSize) {
+        int size = ++framesSent;
+
+        char expected = expectedContent;
+        ByteBuf shortFragmentStart =
+            encoder.encodeTextFragmentStart(withPayload(allocator, encoder, expected, size));
+        ByteBuf shortFragmentEnd =
+            encoder.encodeContinuationFragmentEnd(withPayload(allocator, encoder, expected, size));
+
+        ByteBuf longFragmentStart =
+            encoder.encodeTextFragmentStart(withPayload(allocator, encoder, expected, size));
+        ByteBuf longFragmentContinuation =
+            encoder.encodeContinuationFragment(withPayload(allocator, encoder, expected, size));
+        ByteBuf longFragmentEnd =
+            encoder.encodeContinuationFragmentEnd(withPayload(allocator, encoder, expected, size));
+
+        ctx.write(shortFragmentStart);
+        ctx.write(shortFragmentEnd);
+        ctx.write(longFragmentStart);
+        ctx.write(longFragmentContinuation);
+        ctx.writeAndFlush(longFragmentEnd);
+      }
+    }
+  }
+
+  static class OutboundTextFragmentationClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    final CompletableFuture<WebSocketFrameFactory> onHandshakeComplete = new CompletableFuture<>();
+    final CompletableFuture<Void> onFrameExchangeComplete = new CompletableFuture<>();
+    final int frameSize;
+    final char expectedContent;
+    WebSocketFrameFactory webSocketFrameFactory;
+    volatile ChannelHandlerContext ctx;
+    int framesReceived;
+    int framesSent;
+    int fragmentsReceived;
+
+    OutboundTextFragmentationClientHandler(int frameSize, char expectedContent) {
+      this.frameSize = frameSize;
+      this.expectedContent = expectedContent;
+    }
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (rsv != 0) {
+        onFrameExchangeComplete.completeExceptionally(
+            new AssertionError("received frame with non-zero rsv: " + rsv));
+        payload.release();
+        return;
+      }
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        onFrameExchangeComplete.completeExceptionally(new AssertionError("received close frame"));
+        payload.release();
+        return;
+      }
+      switch (fragmentsReceived) {
+        case /*short start*/ 0:
+        case /*long start*/ 2:
+          {
+            if (opcode != WebSocketProtocol.OPCODE_TEXT) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("first fragment with non-text opcode: " + opcode));
+              return;
+            }
+            if (finalFragment) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("received non-fragmented frame"));
+              return;
+            }
+            int expectedSize = framesReceived + 1;
+            int payloadSize = payload.readableBytes();
+            if (payloadSize != expectedSize) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError(
+                      "received fragment frame with payload size: "
+                          + payloadSize
+                          + ", expected: "
+                          + expectedSize));
+              return;
+            }
+            for (int i = 0; i < payload.readableBytes(); i++) {
+              char ch = (char) payload.readByte();
+              if (ch != expectedContent) {
+                payload.release();
+                onFrameExchangeComplete.completeExceptionally(
+                    new AssertionError(
+                        "received fragment frame with payload: "
+                            + ch
+                            + ", expected: "
+                            + expectedContent));
+                return;
+              }
+            }
+            fragmentsReceived++;
+          }
+          break;
+        case /*short end*/ 1:
+        case /*long end*/ 4:
+          {
+            if (opcode != WebSocketProtocol.OPCODE_CONT) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("first fragment with non-continuation opcode: " + opcode));
+              return;
+            }
+            if (!finalFragment) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("received non-final fragment, expected final"));
+              return;
+            }
+            int expectedSize = framesReceived + 1;
+            int payloadSize = payload.readableBytes();
+            if (payloadSize != expectedSize) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError(
+                      "received fragment frame with payload size: "
+                          + payloadSize
+                          + ", expected: "
+                          + expectedSize));
+              return;
+            }
+            for (int i = 0; i < payload.readableBytes(); i++) {
+              char ch = (char) payload.readByte();
+              if (ch != expectedContent) {
+                payload.release();
+                onFrameExchangeComplete.completeExceptionally(
+                    new AssertionError(
+                        "received fragment frame with payload: "
+                            + ch
+                            + ", expected: "
+                            + expectedContent));
+                return;
+              }
+            }
+            payload.release();
+            if (fragmentsReceived == /*long end*/ 4) {
+              fragmentsReceived = 0;
+              if (++framesReceived == frameSize) {
+                onFrameExchangeComplete.complete(null);
+              }
+            } else {
+              fragmentsReceived++;
+            }
+          }
+          break;
+        case /*long continuation*/ 3:
+          {
+            if (opcode != WebSocketProtocol.OPCODE_CONT) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("first fragment with non-continuation opcode: " + opcode));
+              return;
+            }
+            if (finalFragment) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("received final fragment, expected non-final"));
+              return;
+            }
+            int expectedSize = framesReceived + 1;
+            int payloadSize = payload.readableBytes();
+            if (payloadSize != expectedSize) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError(
+                      "received fragment frame with payload size: "
+                          + payloadSize
+                          + ", expected: "
+                          + expectedSize));
+              return;
+            }
+            for (int i = 0; i < payload.readableBytes(); i++) {
+              char ch = (char) payload.readByte();
+              if (ch != expectedContent) {
+                payload.release();
+                onFrameExchangeComplete.completeExceptionally(
+                    new AssertionError(
+                        "received fragment frame with payload: "
+                            + ch
+                            + ", expected: "
+                            + expectedContent));
+                return;
+              }
+            }
+            payload.release();
+            fragmentsReceived++;
+          }
+          break;
+        default:
+          throw new AssertionError("Unexpected fragmentsReceived state: " + fragmentsReceived);
+      }
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      this.ctx = ctx;
+      onHandshakeComplete.complete(webSocketFrameFactory);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(new ClosedChannelException());
+      }
+    }
+
+    @Override
+    public void onExceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(cause);
+      }
+    }
+
+    CompletableFuture<WebSocketFrameFactory> onHandshakeCompleted() {
+      return onHandshakeComplete;
+    }
+
+    CompletableFuture<Void> startFramesExchange() {
+      ChannelHandlerContext c = ctx;
+      c.executor().execute(() -> sendFrames(c));
+      return onFrameExchangeComplete;
+    }
+
+    protected void sendFrames(ChannelHandlerContext c) {
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+      while (framesSent < frameSize) {
+        int size = ++framesSent;
+        ByteBuf shortFragmentStart =
+            factory.mask(
+                withPayload(
+                    factory.createTextFragmentStart(c.alloc(), size), expectedContent, size));
+        ByteBuf shortFragmentEnd =
+            factory.mask(
+                withPayload(
+                    factory.createContinuationFragmentEnd(c.alloc(), size), expectedContent, size));
+
+        ByteBuf longFragmentStart =
+            factory.mask(
+                withPayload(
+                    factory.createTextFragmentStart(c.alloc(), size), expectedContent, size));
+        ByteBuf longFragmentContinuation =
+            factory.mask(
+                withPayload(
+                    factory.createContinuationFragment(c.alloc(), size), expectedContent, size));
+        ByteBuf longFragmentEnd =
+            factory.mask(
+                withPayload(
+                    factory.createContinuationFragmentEnd(c.alloc(), size), expectedContent, size));
+
+        ctx.write(shortFragmentStart);
+        ctx.write(shortFragmentEnd);
+        ctx.write(longFragmentStart);
+        ctx.write(longFragmentContinuation);
+        ctx.writeAndFlush(longFragmentEnd);
+      }
+    }
+
+    static ByteBuf withPayload(ByteBuf fragment, char content, int size) {
+      for (int i = 0; i < size; i++) {
+        fragment.writeByte(content);
+      }
+      return fragment;
+    }
+  }
+
+  static class OutboundBinaryFragmentationClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    final CompletableFuture<WebSocketFrameFactory> onHandshakeComplete = new CompletableFuture<>();
+    final CompletableFuture<Void> onFrameExchangeComplete = new CompletableFuture<>();
+    final int frameSize;
+    WebSocketFrameFactory webSocketFrameFactory;
+    volatile ChannelHandlerContext ctx;
+    int framesReceived;
+    int framesSent;
+    int fragmentsReceived;
+
+    OutboundBinaryFragmentationClientHandler(int frameSize) {
+      this.frameSize = frameSize;
+    }
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (rsv != 0) {
+        onFrameExchangeComplete.completeExceptionally(
+            new AssertionError("received frame with non-zero rsv: " + rsv));
+        payload.release();
+        return;
+      }
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        onFrameExchangeComplete.completeExceptionally(new AssertionError("received close frame"));
+        payload.release();
+        return;
+      }
+      switch (fragmentsReceived) {
+        case /*short start*/ 0:
+        case /*long start*/ 2:
+          {
+            if (opcode != WebSocketProtocol.OPCODE_BINARY) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("first fragment with non-binary opcode: " + opcode));
+              return;
+            }
+            if (finalFragment) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("received non-fragmented frame"));
+              return;
+            }
+            int expectedSize = framesReceived + 1;
+            int payloadSize = payload.readableBytes();
+            if (payloadSize != expectedSize) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError(
+                      "received fragment frame with payload size: "
+                          + payloadSize
+                          + ", expected: "
+                          + expectedSize));
+              return;
+            }
+            byte expectedPayload = (byte) 0xFE;
+            for (int i = 0; i < payload.readableBytes(); i++) {
+              byte b = payload.readByte();
+              if (b != expectedPayload) {
+                payload.release();
+                onFrameExchangeComplete.completeExceptionally(
+                    new AssertionError(
+                        "received fragment frame with payload: "
+                            + Long.toHexString(b)
+                            + ", expected: "
+                            + Long.toHexString(expectedPayload)));
+                return;
+              }
+            }
+            fragmentsReceived++;
+          }
+          break;
+        case /*short end*/ 1:
+        case /*long end*/ 4:
+          {
+            if (opcode != WebSocketProtocol.OPCODE_CONT) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("first fragment with non-continuation opcode: " + opcode));
+              return;
+            }
+            if (!finalFragment) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("received non-final fragment, expected final"));
+              return;
+            }
+            int expectedSize = framesReceived + 1;
+            int payloadSize = payload.readableBytes();
+            if (payloadSize != expectedSize) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError(
+                      "received fragment frame with payload size: "
+                          + payloadSize
+                          + ", expected: "
+                          + expectedSize));
+              return;
+            }
+            byte expectedPayload = (byte) 0xFE;
+            for (int i = 0; i < payload.readableBytes(); i++) {
+              byte b = payload.readByte();
+              if (b != expectedPayload) {
+                payload.release();
+                onFrameExchangeComplete.completeExceptionally(
+                    new AssertionError(
+                        "received fragment frame with payload: "
+                            + Long.toHexString(b)
+                            + ", expected: "
+                            + Long.toHexString(expectedPayload)));
+                return;
+              }
+            }
+            payload.release();
+            if (fragmentsReceived == /*long end*/ 4) {
+              fragmentsReceived = 0;
+              if (++framesReceived == frameSize) {
+                onFrameExchangeComplete.complete(null);
+              }
+            } else {
+              fragmentsReceived++;
+            }
+          }
+          break;
+        case /*long continuation*/ 3:
+          {
+            if (opcode != WebSocketProtocol.OPCODE_CONT) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("first fragment with non-continuation opcode: " + opcode));
+              return;
+            }
+            if (finalFragment) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError("received final fragment, expected non-final"));
+              return;
+            }
+            int expectedSize = framesReceived + 1;
+            int payloadSize = payload.readableBytes();
+            if (payloadSize != expectedSize) {
+              payload.release();
+              onFrameExchangeComplete.completeExceptionally(
+                  new AssertionError(
+                      "received fragment frame with payload size: "
+                          + payloadSize
+                          + ", expected: "
+                          + expectedSize));
+              return;
+            }
+            byte expectedPayload = (byte) 0xFE;
+            for (int i = 0; i < payload.readableBytes(); i++) {
+              byte b = payload.readByte();
+              if (b != expectedPayload) {
+                payload.release();
+                onFrameExchangeComplete.completeExceptionally(
+                    new AssertionError(
+                        "received fragment frame with payload: "
+                            + Long.toHexString(b)
+                            + ", expected: "
+                            + Long.toHexString(expectedPayload)));
+                return;
+              }
+            }
+            payload.release();
+            fragmentsReceived++;
+          }
+          break;
+        default:
+          throw new AssertionError("Unexpected fragmentsReceived state: " + fragmentsReceived);
+      }
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      this.ctx = ctx;
+      onHandshakeComplete.complete(webSocketFrameFactory);
+    }
+
+    @Override
+    public void onClose(ChannelHandlerContext ctx) {
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(new ClosedChannelException());
+      }
+    }
+
+    @Override
+    public void onExceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(cause);
+      }
+    }
+
+    CompletableFuture<WebSocketFrameFactory> onHandshakeCompleted() {
+      return onHandshakeComplete;
+    }
+
+    CompletableFuture<Void> startFramesExchange() {
+      ChannelHandlerContext c = ctx;
+      c.executor().execute(() -> sendFrames(c));
+      return onFrameExchangeComplete;
+    }
+
+    protected void sendFrames(ChannelHandlerContext c) {
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+      while (framesSent < frameSize) {
+        int size = ++framesSent;
+        ByteBuf shortFragmentStart =
+            factory.mask(
+                withPayload(factory.createBinaryFragmentStart(c.alloc(), size), (byte) 0xFE, size));
+        ByteBuf shortFragmentEnd =
+            factory.mask(
+                withPayload(
+                    factory.createContinuationFragmentEnd(c.alloc(), size), (byte) 0xFE, size));
+
+        ByteBuf longFragmentStart =
+            factory.mask(
+                withPayload(factory.createBinaryFragmentStart(c.alloc(), size), (byte) 0xFE, size));
+        ByteBuf longFragmentContinuation =
+            factory.mask(
+                withPayload(
+                    factory.createContinuationFragment(c.alloc(), size), (byte) 0xFE, size));
+        ByteBuf longFragmentEnd =
+            factory.mask(
+                withPayload(
+                    factory.createContinuationFragmentEnd(c.alloc(), size), (byte) 0xFE, size));
+
+        ctx.write(shortFragmentStart);
+        ctx.write(shortFragmentEnd);
+        ctx.write(longFragmentStart);
+        ctx.write(longFragmentContinuation);
+        ctx.writeAndFlush(longFragmentEnd);
+      }
+    }
+
+    static ByteBuf withPayload(ByteBuf fragment, byte content, int size) {
+      for (int i = 0; i < size; i++) {
+        fragment.writeByte(content);
+      }
+      return fragment;
     }
   }
 
