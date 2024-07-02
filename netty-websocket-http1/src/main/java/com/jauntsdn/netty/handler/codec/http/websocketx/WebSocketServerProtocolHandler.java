@@ -20,6 +20,8 @@ import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -182,11 +184,13 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     if (cause != null) {
       handshake.tryFailure(cause);
       if (cause instanceof WebSocketHandshakeException) {
+        String errorMessage = cause.getMessage();
+        ByteBuf errorContent =
+            errorMessage == null || errorMessage.isEmpty()
+                ? Unpooled.EMPTY_BUFFER
+                : ByteBufUtil.writeUtf8(ctx.alloc(), errorMessage);
         FullHttpResponse response =
-            new DefaultFullHttpResponse(
-                HTTP_1_1,
-                HttpResponseStatus.BAD_REQUEST,
-                Unpooled.wrappedBuffer(cause.getMessage().getBytes()));
+            new DefaultFullHttpResponse(HTTP_1_1, HttpResponseStatus.BAD_REQUEST, errorContent);
         ctx.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
       } else {
         ctx.fireExceptionCaught(cause);
