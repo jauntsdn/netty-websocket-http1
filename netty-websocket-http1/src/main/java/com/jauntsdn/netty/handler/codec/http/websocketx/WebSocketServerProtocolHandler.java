@@ -67,7 +67,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       String subprotocols,
       WebSocketDecoderConfig webSocketDecoderConfig,
       long handshakeTimeoutMillis,
-      WebSocketCallbacksHandler webSocketHandler) {
+      @Nullable WebSocketCallbacksHandler webSocketHandler) {
     this.path = path;
     this.subprotocols = subprotocols;
     this.decoderConfig = webSocketDecoderConfig;
@@ -197,7 +197,10 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
         ctx.close();
       }
     } else {
-      WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
+      WebSocketCallbacksHandler handler = webSocketHandler;
+      if (handler != null) {
+        WebSocketCallbacksHandler.exchange(ctx, handler);
+      }
       handshake.trySuccess();
       ChannelPipeline p = ctx.channel().pipeline();
       p.fireUserEventTriggered(
@@ -303,19 +306,15 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
      * @param webSocketHandler handler to process successfully handshaked webSocket
      * @return this Builder instance
      */
-    public Builder webSocketCallbacksHandler(WebSocketCallbacksHandler webSocketHandler) {
-      this.webSocketCallbacksHandler = Objects.requireNonNull(webSocketHandler, "webSocketHandler");
+    public Builder webSocketCallbacksHandler(@Nullable WebSocketCallbacksHandler webSocketHandler) {
+      this.webSocketCallbacksHandler = webSocketHandler;
       return this;
     }
 
     /** @return new WebSocketServerProtocolHandler instance */
     public WebSocketServerProtocolHandler build() {
-      WebSocketCallbacksHandler handler = webSocketCallbacksHandler;
-      if (handler == null) {
-        throw new IllegalStateException("webSocketCallbacksHandler was not provided");
-      }
       return new WebSocketServerProtocolHandler(
-          path, subprotocols, decoderConfig, handshakeTimeoutMillis, handler);
+          path, subprotocols, decoderConfig, handshakeTimeoutMillis, webSocketCallbacksHandler);
     }
 
     private static long requirePositive(long val, String desc) {
