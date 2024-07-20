@@ -18,7 +18,6 @@ package com.jauntsdn.netty.handler.codec.http.websocketx;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.util.ByteProcessor;
 import io.netty.util.CharsetUtil;
 
 /**
@@ -76,9 +75,9 @@ public interface WebSocketFrameListener {
 
   /**
    * UTF8 finite state machine based implementation from
-   * https://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+   * https://bjoern.hoehrmann.de/utf-8/decoder/dfa/ optimized for ASCII content.
    */
-  final class Utf8FrameValidator implements ByteProcessor {
+  final class Utf8FrameValidator {
     public static final int UTF8_VALIDATION_ERROR_CODE = 1007;
     public static final String UTF8_VALIDATION_ERROR_MESSAGE =
         "inbound text frame with non-utf8 contents";
@@ -120,7 +119,7 @@ public interface WebSocketFrameListener {
      * @return true if payload is utf8 encoded, false otherwise
      */
     public boolean validateTextFrame(ByteBuf buffer) {
-      buffer.forEachByte(this);
+      checkUtf8(buffer);
       int st = state;
       state = UTF8_ACCEPT;
       codep = 0;
@@ -132,7 +131,7 @@ public interface WebSocketFrameListener {
      * @return true if payload is utf8 encoded, false otherwise
      */
     public boolean validateTextFragmentStart(ByteBuf buffer) {
-      buffer.forEachByte(this);
+      checkUtf8(buffer);
       return state != UTF8_REJECT;
     }
 
@@ -152,8 +151,56 @@ public interface WebSocketFrameListener {
       return validateTextFrame(buffer);
     }
 
-    @Override
-    public boolean process(byte bufferByte) {
+    private void checkUtf8(ByteBuf buffer) {
+      int readableBytes = buffer.readableBytes();
+      int from = buffer.readerIndex();
+      int to = from + readableBytes;
+      boolean cont = true;
+      int step = Long.BYTES;
+      while (to - from >= step) {
+        long bytes = buffer.getLong(from);
+        if (
+        /*is non-ascii*/ (bytes & 0x8080808080808080L) != 0) {
+          for (int i = 0; i < step; i++) {
+            byte b = (byte) ((bytes >> 8 * (step - (i + 1))) & 0xFF);
+            cont = checkUtf8(b);
+            if (!cont) {
+              break;
+            }
+          }
+        }
+        from += step;
+      }
+      if (cont) {
+        step = Integer.BYTES;
+        while (to - from >= step) {
+          int bytes = buffer.getInt(from);
+          if (
+          /*is non-ascii*/ (bytes & 0x80808080) != 0) {
+            for (int i = 0; i < step; i++) {
+              byte b = (byte) ((bytes >> 8 * (step - (i + 1))) & 0xFF);
+              cont = checkUtf8(b);
+              if (!cont) {
+                break;
+              }
+            }
+          }
+          from += step;
+        }
+      }
+      if (cont) {
+        while (to - from >= 1) {
+          byte b = buffer.getByte(from);
+          cont = checkUtf8(b);
+          if (!cont) {
+            break;
+          }
+          from += 1;
+        }
+      }
+    }
+
+    private boolean checkUtf8(byte bufferByte) {
       byte type = TYPES[bufferByte & 0xFF];
       int st = state;
       codep = st != UTF8_ACCEPT ? bufferByte & 0x3f | codep << 6 : 0xff >> type & bufferByte;

@@ -39,6 +39,7 @@ import io.netty.util.ReferenceCountUtil;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -270,6 +271,42 @@ public class WebSocketValidationTest {
     } finally {
       closeFrames.forEach(ByteBuf::release);
     }
+  }
+
+  @Test
+  void utf8Validator() {
+    String ascii = "Are those shy Eurasian footwear, cowboy chaps, or jolly earthmoving headgear";
+    String utf8 = "Чуєш їх, доцю, га? Кумедна ж ти, прощайся без ґольфів!";
+    List<ByteBuf> asciiList = stringList(ByteBufAllocator.DEFAULT, ascii);
+    List<ByteBuf> utf8List = stringList(ByteBufAllocator.DEFAULT, utf8);
+    try {
+      WebSocketFrameListener.Utf8FrameValidator validator =
+          WebSocketFrameListener.Utf8FrameValidator.create();
+      for (ByteBuf byteBuf : asciiList) {
+        Assertions.assertThat(validator.validateTextFrame(byteBuf)).isTrue();
+      }
+      for (ByteBuf byteBuf : utf8List) {
+        Assertions.assertThat(validator.validateTextFrame(byteBuf)).isTrue();
+      }
+    } finally {
+      for (ByteBuf byteBuf : asciiList) {
+        byteBuf.release();
+      }
+      for (ByteBuf byteBuf : utf8List) {
+        byteBuf.release();
+      }
+    }
+  }
+
+  static List<ByteBuf> stringList(ByteBufAllocator allocator, String string) {
+    int length = string.length();
+    List<ByteBuf> list = new ArrayList<>(length);
+    for (int i = 0; i < length; i++) {
+      String substring = string.substring(0, i + 1);
+      ByteBuf byteBuf = ByteBufUtil.writeUtf8(allocator, substring);
+      list.add(byteBuf);
+    }
+    return list;
   }
 
   @Test
