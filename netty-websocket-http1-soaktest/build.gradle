@@ -33,16 +33,6 @@ dependencies {
     runtimeOnly "ch.qos.logback:logback-classic"
 }
 
-task runServer(type: JavaExec) {
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.soaktest.server.Main"
-}
-
-task runClient(type: JavaExec) {
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.soaktest.client.Main"
-}
-
 task serverScripts(type: CreateStartScripts) {
     mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.soaktest.server.Main"
     applicationName = "${project.name}-server"
