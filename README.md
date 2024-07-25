@@ -167,7 +167,7 @@ repositories {
 }
 
 dependencies {
-    implementation "com.jauntsdn.netty:netty-websocket-http1:1.1.4"
+    implementation "com.jauntsdn.netty:netty-websocket-http1:1.2.0"
 }
 ```
 
