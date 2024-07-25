@@ -20,6 +20,7 @@ import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol
 import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_CLOSE;
 import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_PING;
 import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_PONG;
+import static com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.OPCODE_TEXT;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -53,6 +54,12 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
           WebSocketFrameFactory.BulkEncoder {
     static final int PREFIX_SIZE_SMALL = 2;
     static final int BINARY_FRAME_SMALL = OPCODE_BINARY << 8 | /*FIN*/ (byte) 1 << 15;
+    static final int TEXT_FRAME_SMALL = OPCODE_TEXT << 8 | /*FIN*/ (byte) 1 << 15;
+
+    static final int BINARY_FRAGMENT_START_SMALL = OPCODE_BINARY << 8;
+    static final int TEXT_FRAGMENT_START_SMALL = OPCODE_TEXT << 8;
+    static final int DATA_FRAGMENT_CONTINUATION_SMALL = 0;
+    static final int DATA_FRAGMENT_CONTINUATION_END_SMALL = /*FIN*/ (byte) 1 << 15;
 
     static final int CLOSE_FRAME = OPCODE_CLOSE << 8 | /*FIN*/ (byte) 1 << 15;
     static final int PING_FRAME = OPCODE_PING << 8 | /*FIN*/ (byte) 1 << 15;
@@ -60,23 +67,70 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     static final int PREFIX_SIZE_MEDIUM = 4;
     static final int BINARY_FRAME_MEDIUM = (BINARY_FRAME_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int TEXT_FRAME_MEDIUM = (TEXT_FRAME_SMALL | /*LEN*/ (byte) 126) << 16;
+
+    static final int BINARY_FRAGMENT_START_MEDIUM =
+        (BINARY_FRAGMENT_START_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int TEXT_FRAGMENT_START_MEDIUM =
+        (TEXT_FRAGMENT_START_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int DATA_FRAGMENT_CONTINUATION_MEDIUM =
+        (DATA_FRAGMENT_CONTINUATION_SMALL | /*LEN*/ (byte) 126) << 16;
+    static final int DATA_FRAGMENT_CONTINUATION_END_MEDIUM =
+        (DATA_FRAGMENT_CONTINUATION_END_SMALL | /*LEN*/ (byte) 126) << 16;
 
     static final WebSocketFrameFactory INSTANCE = new FrameFactory();
 
-    @Override
-    public ByteBuf createBinaryFrame(ByteBufAllocator allocator, int payloadSize) {
+    static ByteBuf createDataFrame(
+        ByteBufAllocator allocator, int payloadSize, int prefixSmall, int prefixMedium) {
       if (payloadSize <= 125) {
         return allocator
             .buffer(PREFIX_SIZE_SMALL + payloadSize)
-            .writeShort(BINARY_FRAME_SMALL | payloadSize);
+            .writeShort(prefixSmall | payloadSize);
       }
 
       if (payloadSize <= 65_535) {
         return allocator
             .buffer(PREFIX_SIZE_MEDIUM + payloadSize)
-            .writeInt(BINARY_FRAME_MEDIUM | payloadSize);
+            .writeInt(prefixMedium | payloadSize);
       }
       throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
+    }
+
+    @Override
+    public ByteBuf createBinaryFrame(ByteBufAllocator allocator, int payloadSize) {
+      return createDataFrame(allocator, payloadSize, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createTextFrame(ByteBufAllocator allocator, int textDataSize) {
+      return createDataFrame(allocator, textDataSize, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createBinaryFragmentStart(ByteBufAllocator allocator, int binaryDataSize) {
+      return createDataFrame(
+          allocator, binaryDataSize, BINARY_FRAGMENT_START_SMALL, BINARY_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createTextFragmentStart(ByteBufAllocator allocator, int textDataSize) {
+      return createDataFrame(
+          allocator, textDataSize, TEXT_FRAGMENT_START_SMALL, TEXT_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createContinuationFragment(ByteBufAllocator allocator, int dataSize) {
+      return createDataFrame(
+          allocator, dataSize, DATA_FRAGMENT_CONTINUATION_SMALL, DATA_FRAGMENT_CONTINUATION_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf createContinuationFragmentEnd(ByteBufAllocator allocator, int dataSize) {
+      return createDataFrame(
+          allocator,
+          dataSize,
+          DATA_FRAGMENT_CONTINUATION_END_SMALL,
+          DATA_FRAGMENT_CONTINUATION_END_MEDIUM);
     }
 
     @Override
@@ -136,17 +190,56 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     @Override
     public ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
+      return encodeDataFrame(binaryFrame, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeTextFrame(ByteBuf textFrame) {
+      return encodeDataFrame(textFrame, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeBinaryFragmentStart(ByteBuf fragmentFrame) {
+      return encodeDataFrame(
+          fragmentFrame, BINARY_FRAGMENT_START_SMALL, BINARY_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeTextFragmentStart(ByteBuf fragmentFrame) {
+      return encodeDataFrame(fragmentFrame, TEXT_FRAGMENT_START_SMALL, TEXT_FRAGMENT_START_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeContinuationFragment(ByteBuf fragmentFrame) {
+      return encodeDataFrame(
+          fragmentFrame, DATA_FRAGMENT_CONTINUATION_SMALL, DATA_FRAGMENT_CONTINUATION_MEDIUM);
+    }
+
+    @Override
+    public ByteBuf encodeContinuationFragmentEnd(ByteBuf fragmentFrame) {
+      return encodeDataFrame(
+          fragmentFrame,
+          DATA_FRAGMENT_CONTINUATION_END_SMALL,
+          DATA_FRAGMENT_CONTINUATION_END_MEDIUM);
+    }
+
+    @Override
+    public int sizeofFragment(int payloadSize) {
+      return sizeOfDataFrame(payloadSize);
+    }
+
+    static ByteBuf encodeDataFrame(ByteBuf binaryFrame, int prefixSmall, int prefixMedium) {
       int frameSize = binaryFrame.readableBytes();
       int smallPrefixSize = 2;
       if (frameSize <= 125 + smallPrefixSize) {
         int payloadSize = frameSize - smallPrefixSize;
-        return binaryFrame.setShort(0, BINARY_FRAME_SMALL | payloadSize);
+        return binaryFrame.setShort(0, prefixSmall | payloadSize);
       }
 
       int mediumPrefixSize = 4;
       if (frameSize <= 65_535 + mediumPrefixSize) {
         int payloadSize = frameSize - mediumPrefixSize;
-        return binaryFrame.setInt(0, BINARY_FRAME_MEDIUM | payloadSize);
+        return binaryFrame.setInt(0, prefixMedium | payloadSize);
       }
       int payloadSize = frameSize - 8;
       throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
@@ -154,10 +247,20 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
 
     @Override
     public int encodeBinaryFramePrefix(ByteBuf byteBuf, int payloadSize) {
+      return encodeDataFramePrefix(byteBuf, payloadSize, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
+    }
+
+    @Override
+    public int encodeTextFramePrefix(ByteBuf byteBuf, int textPayloadSize) {
+      return encodeDataFramePrefix(byteBuf, textPayloadSize, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
+    }
+
+    static int encodeDataFramePrefix(
+        ByteBuf byteBuf, int payloadSize, int prefixSmall, int prefixMedium) {
       if (payloadSize <= 125) {
-        byteBuf.writeShort(BINARY_FRAME_SMALL | payloadSize);
+        byteBuf.writeShort(prefixSmall | payloadSize);
       } else if (payloadSize <= 65_535) {
-        byteBuf.writeInt(BINARY_FRAME_MEDIUM | payloadSize);
+        byteBuf.writeInt(prefixMedium | payloadSize);
       } else {
         throw new IllegalArgumentException(payloadSizeLimit(payloadSize, 65_535));
       }
@@ -170,7 +273,21 @@ final class NonMaskingWebSocketEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
+    public ByteBuf maskTextFrame(ByteBuf byteBuf, int mask, int textPayloadSize) {
+      return byteBuf;
+    }
+
+    @Override
     public int sizeofBinaryFrame(int payloadSize) {
+      return sizeOfDataFrame(payloadSize);
+    }
+
+    @Override
+    public int sizeofTextFrame(int textPayloadSize) {
+      return sizeOfDataFrame(textPayloadSize);
+    }
+
+    static int sizeOfDataFrame(int payloadSize) {
       if (payloadSize <= 125) {
         return payloadSize + 2;
       }

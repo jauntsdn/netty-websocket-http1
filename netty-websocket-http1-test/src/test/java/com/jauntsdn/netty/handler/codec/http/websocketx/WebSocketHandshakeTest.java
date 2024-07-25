@@ -54,6 +54,7 @@ import java.nio.channels.ClosedChannelException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
@@ -172,26 +173,6 @@ public class WebSocketHandshakeTest {
     client.close();
   }
 
-  @Test
-  void clientBuilderMissingHandler() {
-    org.junit.jupiter.api.Assertions.assertThrows(
-        IllegalStateException.class,
-        () -> {
-          WebSocketClientProtocolHandler clientProtocolHandler =
-              WebSocketClientProtocolHandler.create().build();
-        });
-  }
-
-  @Test
-  void serverBuilderMissingHandler() {
-    org.junit.jupiter.api.Assertions.assertThrows(
-        IllegalStateException.class,
-        () -> {
-          WebSocketServerProtocolHandler serverProtocolHandler =
-              WebSocketServerProtocolHandler.create().build();
-        });
-  }
-
   @Timeout(15)
   @Test
   void clientTimeout() throws InterruptedException {
@@ -307,6 +288,74 @@ public class WebSocketHandshakeTest {
     }
     client.closeFuture().await();
     Assertions.assertThat(client.isOpen()).isFalse();
+  }
+
+  @Test
+  void noCallbackHandlerHandshake() throws Exception {
+    String path = "/test";
+    NoCallbackServerHandler noCallbackServerHandler = new NoCallbackServerHandler();
+    NoCallbackClientHandler noCallbackClientHandler = new NoCallbackClientHandler();
+
+    Channel s =
+        server =
+            new ServerBootstrap()
+                .group(new NioEventLoopGroup(1))
+                .channel(NioServerSocketChannel.class)
+                .childHandler(
+                    new ChannelInitializer<SocketChannel>() {
+                      @Override
+                      protected void initChannel(SocketChannel ch) {
+                        HttpServerCodec http1Codec = new HttpServerCodec();
+                        HttpObjectAggregator http1Aggregator = new HttpObjectAggregator(65536);
+                        WebSocketServerProtocolHandler webSocketProtocolHandler =
+                            WebSocketServerProtocolHandler.create()
+                                .path(path)
+                                .decoderConfig(webSocketDecoderConfig(true, true, 125))
+                                .build();
+
+                        ChannelPipeline pipeline = ch.pipeline();
+                        pipeline.addLast(
+                            http1Codec,
+                            http1Aggregator,
+                            webSocketProtocolHandler,
+                            noCallbackServerHandler);
+                      }
+                    })
+                .bind("localhost", 0)
+                .sync()
+                .channel();
+
+    Channel client =
+        new Bootstrap()
+            .group(new NioEventLoopGroup(1))
+            .channel(NioSocketChannel.class)
+            .handler(
+                new ChannelInitializer<SocketChannel>() {
+                  @Override
+                  protected void initChannel(SocketChannel ch) {
+                    HttpClientCodec http1Codec = new HttpClientCodec();
+                    HttpObjectAggregator http1Aggregator = new HttpObjectAggregator(65536);
+                    WebSocketClientProtocolHandler webSocketProtocolHandler =
+                        WebSocketClientProtocolHandler.create()
+                            .path(path)
+                            .allowMaskMismatch(true)
+                            .maxFramePayloadLength(125)
+                            .mask(true)
+                            .build();
+
+                    ChannelPipeline pipeline = ch.pipeline();
+                    pipeline.addLast(
+                        http1Codec,
+                        http1Aggregator,
+                        webSocketProtocolHandler,
+                        noCallbackClientHandler);
+                  }
+                })
+            .connect(s.localAddress())
+            .sync()
+            .channel();
+
+    noCallbackClientHandler.exchangeCompleted.get(5, TimeUnit.SECONDS);
   }
 
   @SuppressWarnings("deprecation")
@@ -562,6 +611,118 @@ public class WebSocketHandshakeTest {
           onClose.complete(null);
         }
       };
+    }
+  }
+
+  private static class NoCallbackClientHandler extends ChannelInboundHandlerAdapter {
+    Promise<Void> exchangeCompleted;
+
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+      exchangeCompleted = ctx.newPromise();
+      super.handlerAdded(ctx);
+    }
+
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+      exchangeCompleted.tryFailure(new ClosedChannelException());
+    }
+
+    @SuppressWarnings("Convert2Lambda")
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+      if (evt
+          == io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
+              .ClientHandshakeStateEvent.HANDSHAKE_COMPLETE) {
+        WebSocketCallbacksHandler.exchange(
+            ctx,
+            new WebSocketCallbacksHandler() {
+              @Override
+              public WebSocketFrameListener exchange(
+                  ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+                ctx.writeAndFlush(
+                    webSocketFrameFactory.mask(
+                        webSocketFrameFactory.createBinaryFrame(ctx.alloc(), 1).writeByte(0xFE)));
+
+                return new WebSocketFrameListener() {
+                  @Override
+                  public void onChannelRead(
+                      ChannelHandlerContext context,
+                      boolean finalFragment,
+                      int rsv,
+                      int opcode,
+                      ByteBuf payload) {
+                    int readableBytes = payload.readableBytes();
+                    if (readableBytes != 1) {
+                      payload.release();
+                      exchangeCompleted.setFailure(
+                          new IllegalStateException("unexpected payload size: " + readableBytes));
+                      return;
+                    }
+                    byte content = payload.readByte();
+                    if (content != (byte) 0xFE) {
+                      payload.release();
+                      exchangeCompleted.setFailure(
+                          new IllegalStateException(
+                              "unexpected payload content: " + Integer.toHexString(content)));
+                      return;
+                    }
+                    payload.release();
+                    exchangeCompleted.setSuccess(null);
+                  }
+                };
+              }
+            });
+      }
+      super.userEventTriggered(ctx, evt);
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+      ReferenceCountUtil.safeRelease(msg);
+    }
+  }
+
+  private static class NoCallbackServerHandler extends ChannelInboundHandlerAdapter {
+
+    @SuppressWarnings("Convert2Lambda")
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+      if (evt
+          instanceof
+          io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler.HandshakeComplete) {
+        WebSocketCallbacksHandler.exchange(
+            ctx,
+            new WebSocketCallbacksHandler() {
+              @Override
+              public WebSocketFrameListener exchange(
+                  ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+                return new WebSocketFrameListener() {
+                  @Override
+                  public void onChannelRead(
+                      ChannelHandlerContext context,
+                      boolean finalFragment,
+                      int rsv,
+                      int opcode,
+                      ByteBuf payload) {
+                    ByteBuf binaryFrame =
+                        webSocketFrameFactory.mask(
+                            webSocketFrameFactory.createBinaryFrame(
+                                ctx.alloc(), payload.readableBytes()));
+                    binaryFrame.writeBytes(payload);
+                    payload.release();
+                    ctx.writeAndFlush(binaryFrame);
+                  }
+                };
+              }
+            });
+      }
+      super.userEventTriggered(ctx, evt);
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+      ReferenceCountUtil.safeRelease(msg);
     }
   }
 

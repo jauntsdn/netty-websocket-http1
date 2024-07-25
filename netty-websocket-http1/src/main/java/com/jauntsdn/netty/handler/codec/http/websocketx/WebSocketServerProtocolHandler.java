@@ -20,6 +20,8 @@ import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -65,7 +67,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       String subprotocols,
       WebSocketDecoderConfig webSocketDecoderConfig,
       long handshakeTimeoutMillis,
-      WebSocketCallbacksHandler webSocketHandler) {
+      @Nullable WebSocketCallbacksHandler webSocketHandler) {
     this.path = path;
     this.subprotocols = subprotocols;
     this.decoderConfig = webSocketDecoderConfig;
@@ -85,6 +87,11 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
           "handshakeCompleted() must be called after channelRegistered()");
     }
     return completed;
+  }
+
+  @Override
+  public boolean isSharable() {
+    return false;
   }
 
   @Override
@@ -177,18 +184,23 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     if (cause != null) {
       handshake.tryFailure(cause);
       if (cause instanceof WebSocketHandshakeException) {
+        String errorMessage = cause.getMessage();
+        ByteBuf errorContent =
+            errorMessage == null || errorMessage.isEmpty()
+                ? Unpooled.EMPTY_BUFFER
+                : ByteBufUtil.writeUtf8(ctx.alloc(), errorMessage);
         FullHttpResponse response =
-            new DefaultFullHttpResponse(
-                HTTP_1_1,
-                HttpResponseStatus.BAD_REQUEST,
-                Unpooled.wrappedBuffer(cause.getMessage().getBytes()));
+            new DefaultFullHttpResponse(HTTP_1_1, HttpResponseStatus.BAD_REQUEST, errorContent);
         ctx.channel().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
       } else {
         ctx.fireExceptionCaught(cause);
         ctx.close();
       }
     } else {
-      WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
+      WebSocketCallbacksHandler handler = webSocketHandler;
+      if (handler != null) {
+        WebSocketCallbacksHandler.exchange(ctx, handler);
+      }
       handshake.trySuccess();
       ChannelPipeline p = ctx.channel().pipeline();
       p.fireUserEventTriggered(
@@ -294,19 +306,15 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
      * @param webSocketHandler handler to process successfully handshaked webSocket
      * @return this Builder instance
      */
-    public Builder webSocketCallbacksHandler(WebSocketCallbacksHandler webSocketHandler) {
-      this.webSocketCallbacksHandler = Objects.requireNonNull(webSocketHandler, "webSocketHandler");
+    public Builder webSocketCallbacksHandler(@Nullable WebSocketCallbacksHandler webSocketHandler) {
+      this.webSocketCallbacksHandler = webSocketHandler;
       return this;
     }
 
     /** @return new WebSocketServerProtocolHandler instance */
     public WebSocketServerProtocolHandler build() {
-      WebSocketCallbacksHandler handler = webSocketCallbacksHandler;
-      if (handler == null) {
-        throw new IllegalStateException("webSocketCallbacksHandler was not provided");
-      }
       return new WebSocketServerProtocolHandler(
-          path, subprotocols, decoderConfig, handshakeTimeoutMillis, handler);
+          path, subprotocols, decoderConfig, handshakeTimeoutMillis, webSocketCallbacksHandler);
     }
 
     private static long requirePositive(long val, String desc) {

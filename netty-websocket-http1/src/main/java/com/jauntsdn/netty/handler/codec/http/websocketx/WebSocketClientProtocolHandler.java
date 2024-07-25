@@ -63,7 +63,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       boolean allowMaskMismatch,
       int maxFramePayloadLength,
       long handshakeTimeoutMillis,
-      WebSocketCallbacksHandler webSocketHandler) {
+      @Nullable WebSocketCallbacksHandler webSocketHandler) {
     this.address = address;
     this.path = path;
     this.subprotocol = subprotocol;
@@ -91,6 +91,11 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       throw new IllegalStateException("handshakeCompleted() must be called after handlerAdded()");
     }
     return completed;
+  }
+
+  @Override
+  public boolean isSharable() {
+    return false;
   }
 
   @Override
@@ -178,7 +183,10 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       cancelHandshakeTimeout();
     }
     ctx.pipeline().remove(this);
-    WebSocketCallbacksHandler.exchange(ctx, webSocketHandler);
+    WebSocketCallbacksHandler handler = webSocketHandler;
+    if (handler != null) {
+      WebSocketCallbacksHandler.exchange(ctx, handler);
+    }
     handshakeCompleted.trySuccess();
     ctx.fireUserEventTriggered(
         io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler
@@ -338,16 +346,13 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
      * @param webSocketHandler handler to process successfully handshaked webSocket
      * @return this Builder instance
      */
-    public Builder webSocketHandler(WebSocketCallbacksHandler webSocketHandler) {
-      this.webSocketHandler = Objects.requireNonNull(webSocketHandler, "webSocketHandler");
+    public Builder webSocketHandler(@Nullable WebSocketCallbacksHandler webSocketHandler) {
+      this.webSocketHandler = webSocketHandler;
       return this;
     }
 
     /** @return new WebSocketClientProtocolHandler instance */
     public WebSocketClientProtocolHandler build() {
-      if (webSocketHandler == null) {
-        throw new IllegalStateException("webSocketHandler was not provided");
-      }
       int maxPayloadLength = maxFramePayloadLength;
       boolean maskMismatch = allowMaskMismatch;
 

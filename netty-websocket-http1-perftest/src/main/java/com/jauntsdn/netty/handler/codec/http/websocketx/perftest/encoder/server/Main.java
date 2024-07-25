@@ -52,6 +52,8 @@ public class Main {
     boolean isNativeTransport =
         Boolean.parseBoolean(System.getProperty("NATIVE_TRANSPORT", "true"));
     boolean isEncrypted = Boolean.parseBoolean(System.getProperty("ENCRYPT", "true"));
+    String keyStoreFile = System.getProperty("KEYSTORE", "localhost.p12");
+    String keyStorePassword = System.getProperty("KEYSTORE_PASS", "localhost");
 
     boolean isOpensslAvailable = OpenSsl.isAvailable();
     boolean isEpollAvailable = Transport.isEpollAvailable();
@@ -67,7 +69,8 @@ public class Main {
 
     Transport transport = Transport.get(isNativeTransport);
     logger.info("\n==> io transport: {}", transport.type());
-    SslContext sslContext = isEncrypted ? Security.serverSslContext() : null;
+    SslContext sslContext =
+        isEncrypted ? Security.serverSslContext(keyStoreFile, keyStorePassword) : null;
 
     ServerBootstrap bootstrap = new ServerBootstrap();
     Channel server =

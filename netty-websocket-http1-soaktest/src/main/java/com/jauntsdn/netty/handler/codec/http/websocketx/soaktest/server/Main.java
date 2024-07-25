@@ -54,6 +54,8 @@ public class Main {
     int frameSizeLimit = Integer.parseInt(System.getProperty("SIZE", "65535"));
     boolean expectMasked = Boolean.parseBoolean(System.getProperty("MASKED", "false"));
     boolean maskMismatch = !Boolean.parseBoolean(System.getProperty("STRICT", "false"));
+    String keyStoreFile = System.getProperty("KEYSTORE", "localhost.p12");
+    String keyStorePassword = System.getProperty("KEYSTORE_PASS", "localhost");
 
     boolean isOpensslAvailable = OpenSsl.isAvailable();
     boolean isEpollAvailable = Transport.isEpollAvailable();
@@ -67,7 +69,7 @@ public class Main {
 
     Transport transport = Transport.get(/*native IO*/ true);
     logger.info("\n==> io transport: {}", transport.type());
-    SslContext sslContext = Security.serverSslContext();
+    SslContext sslContext = Security.serverSslContext(keyStoreFile, keyStorePassword);
 
     ServerBootstrap bootstrap = new ServerBootstrap();
     Channel server =

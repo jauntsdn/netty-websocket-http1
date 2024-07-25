@@ -22,10 +22,11 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.ssl.SupportedCipherSuiteFilter;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import io.netty.handler.ssl.util.SelfSignedCertificate;
-import java.security.SecureRandom;
+import java.io.InputStream;
+import java.security.KeyStore;
 import java.util.Arrays;
 import java.util.List;
+import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,11 +34,16 @@ import org.slf4j.LoggerFactory;
 public final class Security {
   private static final Logger logger = LoggerFactory.getLogger(Security.class);
 
-  public static SslContext serverSslContext() throws Exception {
-    SecureRandom random = new SecureRandom();
-    SelfSignedCertificate ssc = new SelfSignedCertificate("com.jauntsdn", random, 1024);
+  public static SslContext serverSslContext(String keystoreFile, String keystorePassword)
+      throws Exception {
+    KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance("SunX509");
+    KeyStore keyStore = KeyStore.getInstance("PKCS12");
+    InputStream keystoreStream = Security.class.getClassLoader().getResourceAsStream(keystoreFile);
+    char[] keystorePasswordArray = keystorePassword.toCharArray();
+    keyStore.load(keystoreStream, keystorePasswordArray);
+    keyManagerFactory.init(keyStore, keystorePasswordArray);
 
-    return SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey())
+    return SslContextBuilder.forServer(keyManagerFactory)
         .protocols("TLSv1.3")
         .sslProvider(sslProvider())
         .ciphers(supportedCypherSuites(), SupportedCipherSuiteFilter.INSTANCE)
