@@ -58,7 +58,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -151,26 +150,6 @@ public class WebSocketHandshakeTest {
         .isNotNull();
     serverHandler.onOpen.join();
     Assertions.assertThat(serverHandler.channel.pipeline().get(DefaultWebSocketDecoder.class))
-        .isNotNull();
-    client.close();
-  }
-
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void smallDecoderConfig() throws Exception {
-    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(false, false, 125);
-    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
-    Channel s = server = testServer("/", decoderConfig, serverHandler);
-
-    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
-    Channel client = testClient(s.localAddress(), "/", false, false, 125, clientHandler);
-
-    clientHandler.onOpen.join();
-    Assertions.assertThat(clientHandler.channel.pipeline().get(SmallWebSocketDecoder.class))
-        .isNotNull();
-    serverHandler.onOpen.join();
-    Assertions.assertThat(serverHandler.channel.pipeline().get(SmallWebSocketDecoder.class))
         .isNotNull();
     client.close();
   }

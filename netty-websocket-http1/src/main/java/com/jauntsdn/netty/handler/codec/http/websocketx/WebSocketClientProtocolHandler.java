@@ -313,8 +313,6 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
 
     /**
      * @param allowMaskMismatch true if inbound frames mask mismatch is allowed, false otherwise.
-     *     For default decoder this must be true. For small decoder this must be false combined with
-     *     maxFramePayloadLength=125
      * @return this Builder instance
      */
     public Builder allowMaskMismatch(boolean allowMaskMismatch) {

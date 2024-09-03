@@ -11,7 +11,7 @@ websocket codecs, minimal heap allocations on frame path, and compatibility with
 
 ### use case & scope
 
-* Intended for dense binary data & small text messages: no extensions (compression) support.
+* Intended for dense binary data & text messages: no extensions (compression) support.
 
 * No per-frame heap allocations in websocket frameFactory / decoder.
 
@@ -28,9 +28,6 @@ properly publish messages on eventloop thread.
 * On encoder side 3 use cases are supported: frame factory [[1]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L1475) (create bytebuffer and encode frame prefix), 
 frame encoder [[2]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L1019) (encode frame prefix into provided bytebuffer), 
 frame bulk-encoder [[3]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L707) (much more performant - encode multiple frames into provided bytebuffer).
-
-* Dedicated decoder for case of exchanging tiny messages over TLS connection: 
-only non-masked frames with <= 125 bytes of payload for minimal per-webSocket state (memory) overhead.
 
 ### performance
 
@@ -119,24 +116,6 @@ public interface WebSocketCallbacksHandler {
       ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory);
 }
 ```
-
-### configuration
-
-#### default messages decoder 
-
-Always expects masked frames, allows mask mismatch [test example](https://github.com/jauntsdn/netty-websocket-http1/blob/bc942b19958c1486ef7414bee9c69ef36a55bfa5/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketHandshakeTest.java#L121)
-
-server: `allowMaskMismatch: true, maxFramePayloadLength: 65_535`
- 
-client: `allowMaskMismatch: true, maxFramePayloadLength: 65_535`
-
-#### small messages decoder 
-
-Always expects non-masking frames, disallows mask mismatch [test example](https://github.com/jauntsdn/netty-websocket-http1/blob/bc942b19958c1486ef7414bee9c69ef36a55bfa5/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketHandshakeTest.java#L140):
-
-server: `expectMasked: false, allowMaskMismatch: false, maxFramePayloadLength: 125`
- 
-client: `mask: false, allowMaskMismatch: false, maxFramePayloadLength: 125` 
 
 ### tests
 

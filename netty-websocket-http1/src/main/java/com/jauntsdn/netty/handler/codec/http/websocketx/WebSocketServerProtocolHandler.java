@@ -280,9 +280,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
 
     /**
      * @param decoderConfig webSocket decoder config that corresponds to library declared scope: no
-     *     extensions, no utf8 validation, maxFrameLength is 65_635. For default decoder:
-     *     allowMaskMismatch = true. For small decoder allowMaskMismatch = false, expectMaskedFrames
-     *     = false, maxFramePayloadLength = 125. Must be non-null.
+     *     extensions, no utf8 validation, maxFrameLength is [125, 65_635] range. Must be non-null.
      * @return this Builder instance
      */
     public Builder decoderConfig(WebSocketDecoderConfig decoderConfig) {

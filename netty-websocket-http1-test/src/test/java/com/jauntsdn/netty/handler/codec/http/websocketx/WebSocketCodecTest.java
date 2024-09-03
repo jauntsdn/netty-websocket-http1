@@ -54,7 +54,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -268,26 +267,6 @@ class WebSocketCodecTest {
     client.close();
   }
 
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void binaryFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), false, false);
-    BinaryFramesTestClientHandler clientHandler = new BinaryFramesTestClientHandler(maxFrameSize);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
-
-    CompletableFuture<Void> onCompleted = clientHandler.startFramesExchange();
-    onCompleted.join();
-    client.close();
-  }
-
   @Timeout(300)
   @MethodSource("maskingArgs")
   @ParameterizedTest
@@ -311,28 +290,6 @@ class WebSocketCodecTest {
     client.close();
   }
 
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void textFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    char content = 'a';
-    Channel s =
-        server = nettyServer(new TextFramesTestServerHandler(maxFrameSize, content), false, false);
-    TextFramesTestClientHandler clientHandler =
-        new TextFramesTestClientHandler(maxFrameSize, content);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
-
-    clientHandler.onFrameExchangeCompleted().join();
-    client.close();
-  }
-
   @Timeout(15)
   @MethodSource("maskingArgs")
   @ParameterizedTest
@@ -349,27 +306,6 @@ class WebSocketCodecTest {
     WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
     Assertions.assertThat(webSocketFrameFactory).isExactlyInstanceOf(webSocketFrameFactoryType);
     Assertions.assertThat(client.pipeline().get(webSocketDecoderType)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void pingFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new PingPongTestServerHandler(), false, false);
-    PingFramesTestClientHandler clientHandler =
-        new PingFramesTestClientHandler(maxFrameSize, (byte) 0xFE);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
 
     CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
     onComplete.join();
@@ -398,27 +334,6 @@ class WebSocketCodecTest {
     client.close();
   }
 
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void pongFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new PingPongTestServerHandler(), false, false);
-    PongFramesTestClientHandler clientHandler =
-        new PongFramesTestClientHandler(maxFrameSize, (byte) 0xFE);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
   @Timeout(15)
   @ParameterizedTest
   @MethodSource("maskingArgs")
@@ -435,27 +350,6 @@ class WebSocketCodecTest {
     WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
     Assertions.assertThat(webSocketFrameFactory).isExactlyInstanceOf(webSocketFrameFactoryType);
     Assertions.assertThat(client.pipeline().get(webSocketDecoderType)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void closeFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new CloseTestServerHandler(), false, false);
-    CloseFramesTestClientHandler clientHandler =
-        new CloseFramesTestClientHandler(WebSocketCloseStatus.NORMAL_CLOSURE, "NORMAL_CLOSURE");
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
 
     CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
     onComplete.join();
@@ -479,28 +373,6 @@ class WebSocketCodecTest {
     WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
     Assertions.assertThat(webSocketFrameFactory).isExactlyInstanceOf(webSocketFrameFactoryType);
     Assertions.assertThat(client.pipeline().get(webSocketDecoderType)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
-  @Disabled("small decoder will be removed on next release")
-  @Timeout(15)
-  @Test
-  void fragmentSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-
-    Channel s = server = nettyServer(new FragmentTestServerHandler(33), false, false);
-    InboundFragmentationFramesTestClientHandler clientHandler =
-        new InboundFragmentationFramesTestClientHandler(70);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
 
     CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
     onComplete.join();
