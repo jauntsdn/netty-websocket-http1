@@ -32,37 +32,16 @@ interface WebSocketCallbacksFrameDecoder extends WebSocketFrameDecoder {
       boolean expectMaskedFrames,
       boolean allowMaskMismatch) {
 
-    /*strict*/
-    if (!allowMaskMismatch) {
-      /*small unmasked*/
-      if (maxFramePayloadLength <= 125 && !expectMaskedFrames) {
-        return maskPayload
-            ? new SmallWebSocketDecoder.WithMaskingEncoder()
-            : new SmallWebSocketDecoder.WithNonMaskingEncoder();
-      }
-      throw new IllegalArgumentException(
-          "enforcing strictly masked/unmasked frames is not supported");
-    }
-    return new DefaultWebSocketDecoder(maxFramePayloadLength);
+    return frameDecoder(maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
   static WebSocketCallbacksFrameDecoder frameDecoder(
       int maxFramePayloadLength, boolean expectMaskedFrames, boolean allowMaskMismatch) {
 
-    /*strict*/
+    Boolean strictExpectMaskedFrames = null;
     if (!allowMaskMismatch) {
-      /*small unmasked*/
-      if (maxFramePayloadLength <= 125 && !expectMaskedFrames) {
-        throw new IllegalArgumentException(
-            "small decoder: use frameDecoder("
-                + "boolean maskPayload,"
-                + "int maxFramePayloadLength,"
-                + "boolean expectMaskedFrames,"
-                + "boolean allowMaskMismatch) instead of deprecated one");
-      }
-      throw new IllegalArgumentException(
-          "enforcing strictly masked/unmasked frames is not supported");
+      strictExpectMaskedFrames = expectMaskedFrames;
     }
-    return new DefaultWebSocketDecoder(maxFramePayloadLength);
+    return new DefaultWebSocketDecoder(maxFramePayloadLength, strictExpectMaskedFrames);
   }
 }

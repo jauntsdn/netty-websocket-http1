@@ -22,9 +22,12 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 
 final class DefaultWebSocketDecoder extends WebSocketDecoder {
+  /*if null, mask mismatch is allowed*/
+  final Boolean expectMaskedFrames;
+  final int maxFramePayloadLength;
+
   WebSocketFrameFactory frameFactory;
 
-  final int maxFramePayloadLength;
   int state = STATE_NON_PARTIAL;
   ByteBuf partialPrefix;
   int partialMask;
@@ -40,8 +43,9 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
   /* non-negative value means fragmentation is in progress*/
   int fragmentedTotalLength = WebSocketProtocol.VALIDATION_RESULT_NON_FRAGMENTING;
 
-  DefaultWebSocketDecoder(int maxFramePayloadLength) {
+  DefaultWebSocketDecoder(int maxFramePayloadLength, Boolean expectMaskedFrames) {
     this.maxFramePayloadLength = maxFramePayloadLength;
+    this.expectMaskedFrames = expectMaskedFrames;
   }
 
   @Override
@@ -91,6 +95,15 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
             boolean maskFlag = (maskAndLen & 0x80) == 0x80;
             int code = (prefix >> 24) & 0xF;
 
+            Boolean expectMasked = expectMaskedFrames;
+            if (expectMasked != null && maskFlag != expectMasked) {
+              WebSocketProtocol.close(
+                  ctx,
+                  this,
+                  WebSocketCloseStatus.PROTOCOL_ERROR,
+                  "frame mask flag expectation mismatch");
+              return;
+            }
             int length;
             int prefixLength;
             if (len <= 125) {
@@ -169,6 +182,15 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
             int len = prefix & 0x7F;
             boolean maskFlag = masking = (prefix & 0x80) == 0x80;
 
+            Boolean expectMasked = expectMaskedFrames;
+            if (expectMasked != null && maskFlag != expectMasked) {
+              WebSocketProtocol.close(
+                  ctx,
+                  this,
+                  WebSocketCloseStatus.PROTOCOL_ERROR,
+                  "frame mask flag expectation mismatch");
+              return;
+            }
             int length;
             /* small prefix is read*/
             if (len <= 125) {
@@ -296,6 +318,15 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
                 int len = prefix & 0x7F;
                 boolean maskFlag = masking = (prefix & 0x80) == 0x80;
 
+                Boolean expectMasked = expectMaskedFrames;
+                if (expectMasked != null && maskFlag != expectMasked) {
+                  WebSocketProtocol.close(
+                      ctx,
+                      this,
+                      WebSocketCloseStatus.PROTOCOL_ERROR,
+                      "frame mask flag expectation mismatch");
+                  return;
+                }
                 /*small length: proceed to next state - mask or partial_payload*/
                 if (len <= 125) {
                   int result =

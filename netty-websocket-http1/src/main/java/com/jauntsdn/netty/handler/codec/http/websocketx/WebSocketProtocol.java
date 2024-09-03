@@ -227,16 +227,7 @@ public final class WebSocketProtocol {
       throw new IllegalArgumentException("extensions are not supported");
     }
     if (withUtf8Validator) {
-      throw new IllegalArgumentException("text frames UTF8 validation is not suppported");
-    }
-    /*strict*/
-    if (!allowMaskMismatch) {
-      if (expectMaskedFrames) {
-        throw new IllegalArgumentException("Enforcing strictly masked frames is not supported");
-      } else if (maxFramePayloadLength > 125) {
-        throw new IllegalArgumentException(
-            "strictly unmasked frames may be enforced for maxFramePayloadLength<=125 only");
-      }
+      throw new IllegalArgumentException("text frames UTF8 validation is not supported");
     }
   }
 
