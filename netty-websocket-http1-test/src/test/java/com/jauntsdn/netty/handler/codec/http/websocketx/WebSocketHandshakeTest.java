@@ -146,10 +146,10 @@ public class WebSocketHandshakeTest {
     Channel client = testClient(s.localAddress(), "/", true, true, 65_535, clientHandler);
 
     clientHandler.onOpen.join();
-    Assertions.assertThat(clientHandler.channel.pipeline().get(DefaultWebSocketDecoder.class))
+    Assertions.assertThat(clientHandler.channel.pipeline().get(WebSocketMaskedDecoder.class))
         .isNotNull();
     serverHandler.onOpen.join();
-    Assertions.assertThat(serverHandler.channel.pipeline().get(DefaultWebSocketDecoder.class))
+    Assertions.assertThat(serverHandler.channel.pipeline().get(WebSocketMaskedDecoder.class))
         .isNotNull();
     client.close();
   }

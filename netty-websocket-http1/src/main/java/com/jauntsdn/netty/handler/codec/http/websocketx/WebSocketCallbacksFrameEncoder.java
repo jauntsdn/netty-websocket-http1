@@ -24,6 +24,6 @@ interface WebSocketCallbacksFrameEncoder extends WebSocketFrameEncoder {
   WebSocketFrameFactory frameFactory(ChannelHandlerContext ctx);
 
   static WebSocketCallbacksFrameEncoder frameEncoder(boolean performMasking) {
-    return performMasking ? MaskingWebSocketEncoder.INSTANCE : NonMaskingWebSocketEncoder.INSTANCE;
+    return performMasking ? WebSocketMaskedEncoder.INSTANCE : WebSocketNonMaskedEncoder.INSTANCE;
   }
 }

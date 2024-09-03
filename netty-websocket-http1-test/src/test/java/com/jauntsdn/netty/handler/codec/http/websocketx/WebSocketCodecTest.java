@@ -407,9 +407,9 @@ class WebSocketCodecTest {
 
   static Stream<Arguments> maskingArgs() {
     return Stream.of(
-        arguments(true, MaskingWebSocketEncoder.FrameFactory.class, DefaultWebSocketDecoder.class),
+        arguments(true, WebSocketMaskedEncoder.FrameFactory.class, WebSocketMaskedDecoder.class),
         arguments(
-            false, NonMaskingWebSocketEncoder.FrameFactory.class, DefaultWebSocketDecoder.class));
+            false, WebSocketNonMaskedEncoder.FrameFactory.class, WebSocketMaskedDecoder.class));
   }
 
   static Channel nettyServer(

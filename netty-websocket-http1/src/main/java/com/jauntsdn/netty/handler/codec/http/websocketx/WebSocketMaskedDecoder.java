@@ -21,7 +21,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 
-final class DefaultWebSocketDecoder extends WebSocketDecoder {
+final class WebSocketMaskedDecoder extends WebSocketDecoder {
   /*if null, mask mismatch is allowed*/
   final Boolean expectMaskedFrames;
   final int maxFramePayloadLength;
@@ -43,7 +43,7 @@ final class DefaultWebSocketDecoder extends WebSocketDecoder {
   /* non-negative value means fragmentation is in progress*/
   int fragmentedTotalLength = WebSocketProtocol.VALIDATION_RESULT_NON_FRAGMENTING;
 
-  DefaultWebSocketDecoder(int maxFramePayloadLength, Boolean expectMaskedFrames) {
+  WebSocketMaskedDecoder(int maxFramePayloadLength, Boolean expectMaskedFrames) {
     this.maxFramePayloadLength = maxFramePayloadLength;
     this.expectMaskedFrames = expectMaskedFrames;
   }
