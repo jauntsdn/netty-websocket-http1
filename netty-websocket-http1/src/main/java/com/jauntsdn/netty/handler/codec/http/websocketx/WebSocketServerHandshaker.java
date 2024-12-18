@@ -28,7 +28,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketVersion;
 import io.netty.handler.ssl.SslHandler;
 import java.util.Objects;
 
-public final class WebSocketServerHandshaker extends WebSocketServerHandshaker13 {
+public class WebSocketServerHandshaker extends WebSocketServerHandshaker13 {
 
   WebSocketServerHandshaker(
       String webSocketURL, String subprotocols, WebSocketDecoderConfig webSocketDecoderConfig) {
@@ -41,7 +41,6 @@ public final class WebSocketServerHandshaker extends WebSocketServerHandshaker13
     WebSocketDecoderConfig decoderConfig = decoderConfig();
 
     return WebSocketCallbacksFrameDecoder.frameDecoder(
-        false,
         decoderConfig.maxFramePayloadLength(),
         decoderConfig.expectMaskedFrames(),
         decoderConfig.allowMaskMismatch());
@@ -55,11 +54,17 @@ public final class WebSocketServerHandshaker extends WebSocketServerHandshaker13
   public static final class Factory {
     private final String path;
     private final String subprotocols;
+    private final boolean nomaskingExtension;
     private final WebSocketDecoderConfig decoderConfig;
 
-    Factory(String path, String subprotocols, WebSocketDecoderConfig decoderConfig) {
+    Factory(
+        String path,
+        String subprotocols,
+        boolean nomaskingExtension,
+        WebSocketDecoderConfig decoderConfig) {
       this.path = Objects.requireNonNull(path, "path");
       this.subprotocols = subprotocols;
+      this.nomaskingExtension = nomaskingExtension;
       this.decoderConfig = Objects.requireNonNull(decoderConfig, "decoderConfig");
     }
 
@@ -67,11 +72,17 @@ public final class WebSocketServerHandshaker extends WebSocketServerHandshaker13
       CharSequence version = req.headers().get(HttpHeaderNames.SEC_WEBSOCKET_VERSION);
       if (version != null) {
         if (version.equals(WebSocketVersion.V13.toHttpHeaderValue())) {
-          return new WebSocketServerHandshaker(
-              webSocketUrl(ctx.pipeline(), req, path), subprotocols, decoderConfig);
+          return webSocketHandshaker(webSocketUrl(ctx.pipeline(), req, path));
         }
       }
       return null;
+    }
+
+    private WebSocketServerHandshaker webSocketHandshaker(String uri) {
+      return nomaskingExtension
+              && WebSocketServerNomaskingHandshaker.supportsNoMaskingExtension(uri)
+          ? new WebSocketServerNomaskingHandshaker(uri, subprotocols, decoderConfig)
+          : new WebSocketServerHandshaker(uri, subprotocols, decoderConfig);
     }
 
     private static String webSocketUrl(ChannelPipeline cp, HttpRequest req, String path) {

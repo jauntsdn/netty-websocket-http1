@@ -23,7 +23,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 
 final class WebSocketMaskedDecoder extends WebSocketDecoder {
   /*if null, mask mismatch is allowed*/
-  final Boolean expectMaskedFrames;
+  Boolean expectMaskedFrames;
   final int maxFramePayloadLength;
 
   WebSocketFrameFactory frameFactory;

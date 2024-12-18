@@ -24,7 +24,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketVersion;
 import java.net.URI;
 import java.util.Objects;
 
-public final class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
+public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
   private final boolean performMasking;
   private final boolean expectMaskedFrames;
   private final boolean allowMaskMismatch;
@@ -55,7 +55,7 @@ public final class WebSocketClientHandshaker extends WebSocketClientHandshaker13
   @Override
   protected WebSocketFrameDecoder newWebsocketDecoder() {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
-        performMasking, maxFramePayloadLength(), expectMaskedFrames, allowMaskMismatch);
+        maxFramePayloadLength(), expectMaskedFrames, allowMaskMismatch);
   }
 
   @Override

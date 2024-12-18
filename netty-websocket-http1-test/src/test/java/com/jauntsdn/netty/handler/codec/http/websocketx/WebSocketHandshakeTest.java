@@ -16,6 +16,7 @@
 
 package com.jauntsdn.netty.handler.codec.http.websocketx;
 
+import com.jauntsdn.netty.handler.codec.http.websocketx.test.Security;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
@@ -34,6 +35,9 @@ import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpClientCodec;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpMessage;
 import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpRequest;
@@ -44,6 +48,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketClientHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler.HandshakeComplete;
 import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler.ServerHandshakeStateEvent;
+import io.netty.handler.ssl.SslContext;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.DefaultPromise;
@@ -57,13 +62,31 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class WebSocketHandshakeTest {
-
+  static SslContext clientSslContext;
+  static SslContext serverSslContext;
   Channel server;
+
+  @BeforeAll
+  static void beforeAll() throws Exception {
+    clientSslContext = Security.clientLocalSslContext();
+    serverSslContext = Security.serverSslContext("localhost.p12", "localhost");
+  }
+
+  @AfterAll
+  static void afterAll() {
+    ReferenceCountUtil.safeRelease(clientSslContext);
+    ReferenceCountUtil.safeRelease(serverSslContext);
+  }
 
   @AfterEach
   void tearDown() {
@@ -365,6 +388,191 @@ public class WebSocketHandshakeTest {
     Assertions.assertThat(completeEvent.selectedSubprotocol()).isEqualTo(subprotocol);
   }
 
+  @Timeout(15)
+  @CsvSource(
+      value = {"true:false", "false:false", "false:true"},
+      delimiter = ':')
+  @ParameterizedTest
+  void nomaskingExtensionNonTlsIgnored(boolean serverExpectMasked, boolean clientMask)
+      throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(serverExpectMasked, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    ChannelState serverChannelState = new ChannelState();
+    Channel s =
+        server =
+            testNomaskingExtensionServer(
+                true, null, decoderConfig, serverHandler, serverChannelState);
+
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    ChannelState clientChannelState = new ChannelState();
+    Channel client =
+        testNomaskingExtensionClient(
+            s.localAddress(),
+            true,
+            null,
+            clientMask,
+            false,
+            125,
+            clientHandler,
+            clientChannelState);
+
+    clientHandler.onOpen.get();
+
+    HttpHeaders clientResponse = clientChannelState.inboundMessageHeaders;
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isExactlyInstanceOf(
+            clientMask
+                ? WebSocketMaskedEncoder.FrameFactory.class
+                : WebSocketNonMaskedEncoder.FrameFactory.class);
+    Assertions.assertThat(clientResponse.contains(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS))
+        .isFalse();
+
+    HttpHeaders serverResponse = serverChannelState.inboundMessageHeaders;
+    Assertions.assertThat(
+            serverChannelState.channelPipeline.get(WebSocketMaskedDecoder.class).expectMaskedFrames)
+        .isEqualTo(serverExpectMasked);
+    Assertions.assertThat(serverResponse.contains(HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS))
+        .isFalse();
+  }
+
+  @Timeout(15)
+  @Test
+  void nomaskingExtensionAccepted() throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(true, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    ChannelState serverChannelState = new ChannelState();
+    Channel s =
+        server =
+            testNomaskingExtensionServer(
+                true, serverSslContext, decoderConfig, serverHandler, serverChannelState);
+
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    ChannelState clientChannelState = new ChannelState();
+    Channel client =
+        testNomaskingExtensionClient(
+            s.localAddress(),
+            true,
+            clientSslContext,
+            true,
+            false,
+            125,
+            clientHandler,
+            clientChannelState);
+
+    clientHandler.onOpen.get();
+
+    HttpHeaders clientResponse = clientChannelState.inboundMessageHeaders;
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isExactlyInstanceOf(WebSocketNonMaskedEncoder.FrameFactory.class);
+    Assertions.assertThat(
+            clientResponse.containsValue(
+                HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
+        .isTrue();
+
+    HttpHeaders serverResponse = serverChannelState.inboundMessageHeaders;
+    Assertions.assertThat(
+            serverChannelState.channelPipeline.get(WebSocketMaskedDecoder.class).expectMaskedFrames)
+        .isFalse();
+    Assertions.assertThat(
+            serverResponse.containsValue(
+                HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
+        .isTrue();
+  }
+
+  @Timeout(15)
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void nomaskingExtensionRejected(boolean expectMasked) throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(expectMasked, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    ChannelState serverChannelState = new ChannelState();
+    Channel s =
+        server =
+            testNomaskingExtensionServer(
+                false, serverSslContext, decoderConfig, serverHandler, serverChannelState);
+
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    ChannelState clientChannelState = new ChannelState();
+    Channel client =
+        testNomaskingExtensionClient(
+            s.localAddress(),
+            true,
+            clientSslContext,
+            true,
+            false,
+            125,
+            clientHandler,
+            clientChannelState);
+
+    clientHandler.onOpen.get();
+
+    HttpHeaders clientResponse = clientChannelState.inboundMessageHeaders;
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isExactlyInstanceOf(WebSocketMaskedEncoder.FrameFactory.class);
+    Assertions.assertThat(
+            clientResponse.containsValue(
+                HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
+        .isFalse();
+
+    HttpHeaders serverResponse = serverChannelState.inboundMessageHeaders;
+    Assertions.assertThat(
+            serverChannelState.channelPipeline.get(WebSocketMaskedDecoder.class).expectMaskedFrames)
+        .isEqualTo(expectMasked);
+    Assertions.assertThat(
+            serverResponse.containsValue(
+                HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
+        .isTrue();
+  }
+
+  @Timeout(15)
+  @ValueSource(booleans = {true, false})
+  @ParameterizedTest
+  void nomaskingExtensionOmitted(boolean mask) throws Exception {
+    boolean expectMasked = true;
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(expectMasked, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    ChannelState serverChannelState = new ChannelState();
+    Channel s =
+        server =
+            testNomaskingExtensionServer(
+                true, serverSslContext, decoderConfig, serverHandler, serverChannelState);
+
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    ChannelState clientChannelState = new ChannelState();
+    Channel client =
+        testNomaskingExtensionClient(
+            s.localAddress(),
+            false,
+            clientSslContext,
+            mask,
+            false,
+            125,
+            clientHandler,
+            clientChannelState);
+
+    clientHandler.onOpen.get();
+
+    HttpHeaders clientResponse = clientChannelState.inboundMessageHeaders;
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isExactlyInstanceOf(
+            mask
+                ? WebSocketMaskedEncoder.FrameFactory.class
+                : WebSocketNonMaskedEncoder.FrameFactory.class);
+    Assertions.assertThat(
+            clientResponse.containsValue(
+                HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
+        .isFalse();
+
+    HttpHeaders serverResponse = serverChannelState.inboundMessageHeaders;
+    Assertions.assertThat(
+            serverChannelState.channelPipeline.get(WebSocketMaskedDecoder.class).expectMaskedFrames)
+        .isEqualTo(expectMasked);
+    Assertions.assertThat(
+            serverResponse.containsValue(
+                HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
+        .isFalse();
+  }
+
   static Channel testClient(
       SocketAddress address,
       String path,
@@ -462,6 +670,87 @@ public class WebSocketHandshakeTest {
         .channel();
   }
 
+  static Channel testNomaskingExtensionClient(
+      SocketAddress address,
+      boolean nomaskingExtension,
+      SslContext sslContext,
+      boolean mask,
+      boolean allowMaskMismatch,
+      int maxFramePayloadLength,
+      WebSocketCallbacksHandler webSocketCallbacksHandler,
+      ChannelState channelState)
+      throws InterruptedException {
+    return new Bootstrap()
+        .group(new NioEventLoopGroup(1))
+        .channel(NioSocketChannel.class)
+        .handler(
+            new ChannelInitializer<SocketChannel>() {
+              @Override
+              protected void initChannel(SocketChannel ch) {
+
+                HttpClientCodec http1Codec = new HttpClientCodec();
+                HttpObjectAggregator http1Aggregator = new HttpObjectAggregator(65536);
+
+                WebSocketClientProtocolHandler webSocketProtocolHandler =
+                    WebSocketClientProtocolHandler.create()
+                        .path("/")
+                        .nomaskingExtension(nomaskingExtension)
+                        .mask(mask)
+                        .allowMaskMismatch(allowMaskMismatch)
+                        .maxFramePayloadLength(maxFramePayloadLength)
+                        .webSocketHandler(webSocketCallbacksHandler)
+                        .build();
+
+                ChannelPipeline pipeline = ch.pipeline();
+                if (sslContext != null) {
+                  pipeline.addLast(sslContext.newHandler(ch.alloc()));
+                }
+                pipeline
+                    .addLast(http1Codec)
+                    .addLast(http1Aggregator)
+                    .addLast(
+                        new ChannelInboundHandlerAdapter() {
+                          @Override
+                          public void channelRead(ChannelHandlerContext ctx, Object msg)
+                              throws Exception {
+                            if (msg instanceof HttpMessage) {
+                              channelState.inboundMessageHeaders = ((HttpMessage) msg).headers();
+                            }
+                            super.channelRead(ctx, msg);
+                          }
+                        })
+                    .addLast(webSocketProtocolHandler);
+              }
+            })
+        .connect(address)
+        .sync()
+        .channel();
+  }
+
+  static Channel testNomaskingExtensionServer(
+      boolean nomaskingExtension,
+      SslContext sslContext,
+      WebSocketDecoderConfig decoderConfig,
+      WebSocketCallbacksHandler webSocketCallbacksHandler,
+      ChannelState channelState)
+      throws InterruptedException {
+    return new ServerBootstrap()
+        .group(new NioEventLoopGroup(1))
+        .channel(NioServerSocketChannel.class)
+        .childHandler(
+            new TestNomaskingAcceptor(
+                nomaskingExtension,
+                sslContext,
+                "/",
+                null,
+                decoderConfig,
+                webSocketCallbacksHandler,
+                channelState))
+        .bind("localhost", 0)
+        .sync()
+        .channel();
+  }
+
   static class NonWebSocketRequestHandler extends ChannelInboundHandlerAdapter {
     private Promise<FullHttpResponse> responsePromise;
 
@@ -504,6 +793,71 @@ public class WebSocketHandshakeTest {
 
     Future<FullHttpResponse> response() {
       return responsePromise;
+    }
+  }
+
+  static class ChannelState {
+    volatile HttpHeaders inboundMessageHeaders;
+    volatile ChannelPipeline channelPipeline;
+  }
+
+  static class TestNomaskingAcceptor extends ChannelInitializer<SocketChannel> {
+    private final boolean nomaskingExtension;
+    private final SslContext sslContext;
+    private final String path;
+    private final String subprotocol;
+    private final WebSocketDecoderConfig webSocketDecoderConfig;
+    private final WebSocketCallbacksHandler webSocketCallbacksHandler;
+    private final ChannelState channelState;
+
+    TestNomaskingAcceptor(
+        boolean nomaskingExtension,
+        SslContext sslContext,
+        String path,
+        String subprotocol,
+        WebSocketDecoderConfig decoderConfig,
+        WebSocketCallbacksHandler webSocketCallbacksHandler,
+        ChannelState channelState) {
+      this.nomaskingExtension = nomaskingExtension;
+      this.sslContext = sslContext;
+      this.path = path;
+      this.subprotocol = subprotocol;
+      this.webSocketDecoderConfig = decoderConfig;
+      this.webSocketCallbacksHandler = webSocketCallbacksHandler;
+      this.channelState = channelState;
+    }
+
+    @Override
+    protected void initChannel(SocketChannel ch) {
+      HttpServerCodec http1Codec = new HttpServerCodec();
+      HttpObjectAggregator http1Aggregator = new HttpObjectAggregator(65536);
+      WebSocketServerProtocolHandler webSocketProtocolHandler =
+          WebSocketServerProtocolHandler.create()
+              .path(path)
+              .nomaskingExtension(nomaskingExtension)
+              .subprotocols(subprotocol)
+              .decoderConfig(webSocketDecoderConfig)
+              .webSocketCallbacksHandler(webSocketCallbacksHandler)
+              .build();
+
+      ChannelPipeline pipeline = channelState.channelPipeline = ch.pipeline();
+      if (sslContext != null) {
+        pipeline.addLast(sslContext.newHandler(ch.alloc()));
+      }
+      pipeline
+          .addLast(http1Codec)
+          .addLast(http1Aggregator)
+          .addLast(
+              new ChannelInboundHandlerAdapter() {
+                @Override
+                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                  if (msg instanceof HttpMessage) {
+                    channelState.inboundMessageHeaders = ((HttpMessage) msg).headers();
+                  }
+                  super.channelRead(ctx, msg);
+                }
+              })
+          .addLast(webSocketProtocolHandler);
     }
   }
 

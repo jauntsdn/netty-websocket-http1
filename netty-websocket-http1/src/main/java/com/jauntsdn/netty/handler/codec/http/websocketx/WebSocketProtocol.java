@@ -246,21 +246,21 @@ public final class WebSocketProtocol {
 
   /*for use with external websocket handlers, e.g. websocket-http2*/
 
-  /** @deprecated use {@link #frameDecoder(boolean, int, boolean, boolean)} instead */
-  @Deprecated
   public static WebSocketFrameDecoder frameDecoder(
       int maxFramePayloadLength, boolean expectMaskedFrames, boolean allowMaskMismatch) {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
         maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
+  /** @deprecated use {@link #frameDecoder(int, boolean, boolean)} instead */
+  @Deprecated
   public static WebSocketFrameDecoder frameDecoder(
       boolean maskPayload,
       int maxFramePayloadLength,
       boolean expectMaskedFrames,
       boolean allowMaskMismatch) {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
-        maskPayload, maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
+        maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
   public static WebSocketFrameEncoder frameEncoder(boolean expectMaskedFrames) {
