@@ -25,9 +25,7 @@ import java.net.URI;
 import java.util.Objects;
 
 public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
-  private final boolean performMasking;
   private final boolean expectMaskedFrames;
-  private final boolean allowMaskMismatch;
 
   public WebSocketClientHandshaker(
       URI webSocketURL,
@@ -47,19 +45,17 @@ public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
         performMasking,
         allowMaskMismatch,
         /*unused*/ -1);
-    this.performMasking = performMasking;
     this.expectMaskedFrames = expectMaskedFrames;
-    this.allowMaskMismatch = allowMaskMismatch;
   }
 
   @Override
   protected WebSocketFrameDecoder newWebsocketDecoder() {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
-        maxFramePayloadLength(), expectMaskedFrames, allowMaskMismatch);
+        maxFramePayloadLength(), expectMaskedFrames, isAllowMaskMismatch());
   }
 
   @Override
   protected WebSocketFrameEncoder newWebSocketEncoder() {
-    return WebSocketCallbacksFrameEncoder.frameEncoder(performMasking);
+    return WebSocketCallbacksFrameEncoder.frameEncoder(isPerformMasking());
   }
 }
