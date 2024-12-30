@@ -46,6 +46,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   private final boolean mask;
   private final boolean expectMaskedFrames;
   private final boolean allowMaskMismatch;
+  private final boolean nomaskingExtension;
   private final int maxFramePayloadLength;
   private final long handshakeTimeoutMillis;
   private final WebSocketCallbacksHandler webSocketHandler;
@@ -61,6 +62,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       boolean mask,
       boolean expectMaskedFrames,
       boolean allowMaskMismatch,
+      boolean nomaskingExtension,
       int maxFramePayloadLength,
       long handshakeTimeoutMillis,
       @Nullable WebSocketCallbacksHandler webSocketHandler) {
@@ -71,6 +73,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     this.mask = mask;
     this.expectMaskedFrames = expectMaskedFrames;
     this.allowMaskMismatch = allowMaskMismatch;
+    this.nomaskingExtension = nomaskingExtension;
     this.maxFramePayloadLength = maxFramePayloadLength;
     this.handshakeTimeoutMillis = handshakeTimeoutMillis;
     this.webSocketHandler = webSocketHandler;
@@ -106,16 +109,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   @Override
   public void channelActive(ChannelHandlerContext ctx) throws Exception {
     super.channelActive(ctx);
-    WebSocketClientHandshaker h =
-        handshaker =
-            new WebSocketClientHandshaker(
-                uri(ctx, address, path),
-                subprotocol,
-                headers,
-                maxFramePayloadLength,
-                mask,
-                expectMaskedFrames,
-                allowMaskMismatch);
+    WebSocketClientHandshaker h = handshaker = webSocketHandshaker(uri(ctx, address, path));
     startHandshakeTimeout(ctx, handshakeTimeoutMillis);
     h.handshake(ctx.channel())
         .addListener(
@@ -161,6 +155,20 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       return;
     }
     super.channelRead(ctx, msg);
+  }
+
+  private WebSocketClientHandshaker webSocketHandshaker(URI uri) {
+    return nomaskingExtension && WebSocketClientNomaskingHandshaker.supportsNoMaskingExtension(uri)
+        ? new WebSocketClientNomaskingHandshaker(
+            uri, subprotocol, headers, maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch)
+        : new WebSocketClientHandshaker(
+            uri,
+            subprotocol,
+            headers,
+            maxFramePayloadLength,
+            mask,
+            expectMaskedFrames,
+            allowMaskMismatch);
   }
 
   private void completeHandshake(ChannelHandlerContext ctx, FullHttpResponse response) {
@@ -258,6 +266,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     private int maxFramePayloadLength = 65_535;
     private long handshakeTimeoutMillis = 15_000;
     private WebSocketCallbacksHandler webSocketHandler;
+    private boolean nomaskingExtension;
 
     private Builder() {}
 
@@ -313,12 +322,21 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
 
     /**
      * @param allowMaskMismatch true if inbound frames mask mismatch is allowed, false otherwise.
-     *     For default decoder this must be true. For small decoder this must be false combined with
-     *     maxFramePayloadLength=125
      * @return this Builder instance
      */
     public Builder allowMaskMismatch(boolean allowMaskMismatch) {
       this.allowMaskMismatch = allowMaskMismatch;
+      return this;
+    }
+
+    /**
+     * @param nomaskingExtension enables "no-masking" extension <a
+     *     href="https://datatracker.ietf.org/doc/html/draft-damjanovic-websockets-nomasking-02">draft</a>.
+     *     Takes precedence over masking related configuration.
+     * @return this Builder instance
+     */
+    public Builder nomaskingExtension(boolean nomaskingExtension) {
+      this.nomaskingExtension = nomaskingExtension;
       return this;
     }
 
@@ -367,6 +385,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
           mask,
           EXPECT_MASKED_FRAMES,
           maskMismatch,
+          nomaskingExtension,
           maxPayloadLength,
           handshakeTimeoutMillis,
           webSocketHandler);

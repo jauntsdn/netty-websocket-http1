@@ -11,26 +11,36 @@ websocket codecs, minimal heap allocations on frame path, and compatibility with
 
 ### use case & scope
 
-* Intended for dense binary data & small text messages: no extensions (compression) support.
+* Intended for dense binary data & text messages: no extensions (compression) support.
 
 * No per-frame heap allocations in websocket frameFactory / decoder.
 
 * Library assumes small frames - many have payload <= 125 bytes, most are < 1500, maximum supported is 65k (65535 bytes).
 
-* Just codec - fragments, pings, close frames are decoded & protocol validated only. It is responsibility of user code 
-to handle frames according to protocol (reassemble frame fragments, perform graceful close, 
-respond to pings) and do utf8 validation of inbound text frames ([utility](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketFrameListener.java#L81) is provided).
-
-* Single-threaded (transport IO event-loop) callbacks / frame factory API - 
-in practice user code has its own message types to carry data, and external means (e.g. mpsc / spsc queues) may be used to 
-properly publish messages on eventloop thread.
-
 * On encoder side 3 use cases are supported: frame factory [[1]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L1475) (create bytebuffer and encode frame prefix), 
 frame encoder [[2]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L1019) (encode frame prefix into provided bytebuffer), 
 frame bulk-encoder [[3]](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java#L707) (much more performant - encode multiple frames into provided bytebuffer).
 
-* Dedicated decoder for case of exchanging tiny messages over TLS connection: 
-only non-masked frames with <= 125 bytes of payload for minimal per-webSocket state (memory) overhead.
+* Just codec - fragments, pings, close frames are decoded & protocol validated only. It is responsibility of user code 
+to handle frames according to protocol (reassemble frame fragments, perform graceful close, 
+respond to pings) and do utf8 validation of inbound text frames ([utility](https://github.com/jauntsdn/netty-websocket-http1/blob/fb7bbb12d4fc0e62a72845dee89fe8f1d86f9a0a/netty-websocket-http1/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketFrameListener.java#L81) is provided).
+
+### build & binaries
+
+```
+./gradlew
+```
+
+Releases are published on MavenCentral
+```groovy
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation "com.jauntsdn.netty:netty-websocket-http1:1.2.0"
+}
+```
 
 ### performance
 
@@ -120,56 +130,21 @@ public interface WebSocketCallbacksHandler {
 }
 ```
 
-### configuration
+### testing
 
-#### default messages decoder 
-
-Always expects masked frames, allows mask mismatch [test example](https://github.com/jauntsdn/netty-websocket-http1/blob/bc942b19958c1486ef7414bee9c69ef36a55bfa5/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketHandshakeTest.java#L121)
-
-server: `allowMaskMismatch: true, maxFramePayloadLength: 65_535`
- 
-client: `allowMaskMismatch: true, maxFramePayloadLength: 65_535`
-
-#### small messages decoder 
-
-Always expects non-masking frames, disallows mask mismatch [test example](https://github.com/jauntsdn/netty-websocket-http1/blob/bc942b19958c1486ef7414bee9c69ef36a55bfa5/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketHandshakeTest.java#L140):
-
-server: `expectMasked: false, allowMaskMismatch: false, maxFramePayloadLength: 125`
- 
-client: `mask: false, allowMaskMismatch: false, maxFramePayloadLength: 125` 
-
-### tests
-
-* WebSocket frames [integration test](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java): 
+* WebSocket frames [integration tests](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java): 
 control & data frames of all allowed sizes, jauntsdn/netty-websocket-http1 client, netty websocket server. 
 
 * WebSocket frames long-running [soak test](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-soaktest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/soaktest): 
 exercising all logic paths of codec with 100m of randomized frames over multiple connections: netty websocket client, jauntsdn/netty-websocket-http1 server.
 
-* [Perf test](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest): 
-per-core throughput of jauntsdn/netty-websocket-http1 client & server.
+* [Perf tests](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest): 
+estimation of per-core throughput of jauntsdn/netty-websocket-http1 client & server.
 
 ### examples
 
 `netty-websocket-http1-perftest` may serve as API showcase for both [client](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest/client/Main.java) 
 and [server](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest/server/Main.java):
-
-### build & binaries
-
-```
-./gradlew
-```
-
-Releases are published on MavenCentral
-```groovy
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    implementation "com.jauntsdn.netty:netty-websocket-http1:1.1.4"
-}
-```
 
 ## LICENSE
 

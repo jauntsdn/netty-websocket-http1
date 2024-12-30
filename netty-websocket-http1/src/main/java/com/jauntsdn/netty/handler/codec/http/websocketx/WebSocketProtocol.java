@@ -227,16 +227,7 @@ public final class WebSocketProtocol {
       throw new IllegalArgumentException("extensions are not supported");
     }
     if (withUtf8Validator) {
-      throw new IllegalArgumentException("text frames UTF8 validation is not suppported");
-    }
-    /*strict*/
-    if (!allowMaskMismatch) {
-      if (expectMaskedFrames) {
-        throw new IllegalArgumentException("Enforcing strictly masked frames is not supported");
-      } else if (maxFramePayloadLength > 125) {
-        throw new IllegalArgumentException(
-            "strictly unmasked frames may be enforced for maxFramePayloadLength<=125 only");
-      }
+      throw new IllegalArgumentException("text frames UTF8 validation is not supported");
     }
   }
 
@@ -255,21 +246,21 @@ public final class WebSocketProtocol {
 
   /*for use with external websocket handlers, e.g. websocket-http2*/
 
-  /** @deprecated use {@link #frameDecoder(boolean, int, boolean, boolean)} instead */
-  @Deprecated
   public static WebSocketFrameDecoder frameDecoder(
       int maxFramePayloadLength, boolean expectMaskedFrames, boolean allowMaskMismatch) {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
         maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
+  /** @deprecated use {@link #frameDecoder(int, boolean, boolean)} instead */
+  @Deprecated
   public static WebSocketFrameDecoder frameDecoder(
       boolean maskPayload,
       int maxFramePayloadLength,
       boolean expectMaskedFrames,
       boolean allowMaskMismatch) {
     return WebSocketCallbacksFrameDecoder.frameDecoder(
-        maskPayload, maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
+        maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
   public static WebSocketFrameEncoder frameEncoder(boolean expectMaskedFrames) {

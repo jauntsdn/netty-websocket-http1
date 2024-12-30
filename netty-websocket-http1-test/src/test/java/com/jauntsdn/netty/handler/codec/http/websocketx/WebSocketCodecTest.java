@@ -267,25 +267,6 @@ class WebSocketCodecTest {
     client.close();
   }
 
-  @Timeout(15)
-  @Test
-  void binaryFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new WebSocketFramesTestServerHandler(), false, false);
-    BinaryFramesTestClientHandler clientHandler = new BinaryFramesTestClientHandler(maxFrameSize);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
-
-    CompletableFuture<Void> onCompleted = clientHandler.startFramesExchange();
-    onCompleted.join();
-    client.close();
-  }
-
   @Timeout(300)
   @MethodSource("maskingArgs")
   @ParameterizedTest
@@ -310,27 +291,6 @@ class WebSocketCodecTest {
   }
 
   @Timeout(15)
-  @Test
-  void textFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    char content = 'a';
-    Channel s =
-        server = nettyServer(new TextFramesTestServerHandler(maxFrameSize, content), false, false);
-    TextFramesTestClientHandler clientHandler =
-        new TextFramesTestClientHandler(maxFrameSize, content);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
-
-    clientHandler.onFrameExchangeCompleted().join();
-    client.close();
-  }
-
-  @Timeout(15)
   @MethodSource("maskingArgs")
   @ParameterizedTest
   void pingFramesDefaultDecoder(
@@ -346,26 +306,6 @@ class WebSocketCodecTest {
     WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
     Assertions.assertThat(webSocketFrameFactory).isExactlyInstanceOf(webSocketFrameFactoryType);
     Assertions.assertThat(client.pipeline().get(webSocketDecoderType)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
-  @Timeout(15)
-  @Test
-  void pingFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new PingPongTestServerHandler(), false, false);
-    PingFramesTestClientHandler clientHandler =
-        new PingFramesTestClientHandler(maxFrameSize, (byte) 0xFE);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
 
     CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
     onComplete.join();
@@ -395,26 +335,6 @@ class WebSocketCodecTest {
   }
 
   @Timeout(15)
-  @Test
-  void pongFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new PingPongTestServerHandler(), false, false);
-    PongFramesTestClientHandler clientHandler =
-        new PongFramesTestClientHandler(maxFrameSize, (byte) 0xFE);
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
-  @Timeout(15)
   @ParameterizedTest
   @MethodSource("maskingArgs")
   void closeFramesDefaultDecoder(
@@ -430,26 +350,6 @@ class WebSocketCodecTest {
     WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
     Assertions.assertThat(webSocketFrameFactory).isExactlyInstanceOf(webSocketFrameFactoryType);
     Assertions.assertThat(client.pipeline().get(webSocketDecoderType)).isNotNull();
-
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
-  }
-
-  @Timeout(15)
-  @Test
-  void closeFramesSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
-    Channel s = server = nettyServer(new CloseTestServerHandler(), false, false);
-    CloseFramesTestClientHandler clientHandler =
-        new CloseFramesTestClientHandler(WebSocketCloseStatus.NORMAL_CLOSURE, "NORMAL_CLOSURE");
-    Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
-
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
 
     CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
     onComplete.join();
@@ -481,30 +381,35 @@ class WebSocketCodecTest {
 
   @Timeout(15)
   @Test
-  void fragmentSmallDecoder() throws Exception {
-    int maxFrameSize = SMALL_CODEC_MAX_FRAME_SIZE;
+  void strictMaskedDecoderUnmaskedFrame() throws Exception {
+    StrictMaskEncoderServerHandler serverHandler = new StrictMaskEncoderServerHandler();
+    Channel s = server = nettyCallbacksServer(serverHandler, true, false);
 
-    Channel s = server = nettyServer(new FragmentTestServerHandler(33), false, false);
-    InboundFragmentationFramesTestClientHandler clientHandler =
-        new InboundFragmentationFramesTestClientHandler(70);
+    StrictMaskEncoderClientHandler clientHandler = new StrictMaskEncoderClientHandler();
     Channel client =
-        webSocketCallbacksClient(s.localAddress(), false, false, maxFrameSize, clientHandler);
+        webSocketCallbacksClient(s.localAddress(), false, false, 10_000, clientHandler);
+    clientHandler.onCloseFrameRead().join();
+    Assertions.assertThat(clientHandler.framesReadCount()).isEqualTo(1);
+    Assertions.assertThat(serverHandler.onFramesRead()).isNotDone();
+  }
 
-    WebSocketFrameFactory webSocketFrameFactory = clientHandler.onHandshakeCompleted().join();
-    Assertions.assertThat(webSocketFrameFactory)
-        .isExactlyInstanceOf(NonMaskingWebSocketEncoder.FrameFactory.class);
-    Assertions.assertThat(client.pipeline().get(SmallWebSocketDecoder.class)).isNotNull();
+  @Timeout(15)
+  @Test
+  void strictMaskedDecoderMaskedFrame() throws Exception {
+    StrictMaskEncoderServerHandler serverHandler = new StrictMaskEncoderServerHandler();
+    Channel s = server = nettyCallbacksServer(serverHandler, true, false);
 
-    CompletableFuture<Void> onComplete = clientHandler.startFramesExchange();
-    onComplete.join();
-    client.close();
+    StrictMaskEncoderClientHandler clientHandler = new StrictMaskEncoderClientHandler();
+    Channel client = webSocketCallbacksClient(s.localAddress(), true, false, 10_000, clientHandler);
+    clientHandler.onBinaryFrameRead().join();
+    Assertions.assertThat(clientHandler.framesReadCount()).isEqualTo(1);
   }
 
   static Stream<Arguments> maskingArgs() {
     return Stream.of(
-        arguments(true, MaskingWebSocketEncoder.FrameFactory.class, DefaultWebSocketDecoder.class),
+        arguments(true, WebSocketMaskedEncoder.FrameFactory.class, WebSocketMaskedDecoder.class),
         arguments(
-            false, NonMaskingWebSocketEncoder.FrameFactory.class, DefaultWebSocketDecoder.class));
+            false, WebSocketNonMaskedEncoder.FrameFactory.class, WebSocketMaskedDecoder.class));
   }
 
   static Channel nettyServer(
@@ -515,6 +420,50 @@ class WebSocketCodecTest {
         .channel(NioServerSocketChannel.class)
         .childHandler(
             new ServerConnectionAcceptor(webSocketHandler, expectMaskedFrames, allowMaskMismatch))
+        .bind("localhost", 0)
+        .sync()
+        .channel();
+  }
+
+  static Channel nettyCallbacksServer(
+      WebSocketCallbacksHandler webSocketHandler,
+      boolean expectMaskedFrames,
+      boolean allowMaskMismatch)
+      throws Exception {
+    return new ServerBootstrap()
+        .group(new NioEventLoopGroup(1))
+        .channel(NioServerSocketChannel.class)
+        .childHandler(
+            new ChannelInitializer<SocketChannel>() {
+              @Override
+              protected void initChannel(SocketChannel ch) {
+                try {
+                  HttpServerCodec http1Codec = new HttpServerCodec();
+                  HttpObjectAggregator http1Aggregator = new HttpObjectAggregator(65536);
+
+                  com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler
+                      webSocketProtocolHandler =
+                          com.jauntsdn.netty.handler.codec.http.websocketx
+                              .WebSocketServerProtocolHandler.create()
+                              .path("/test")
+                              .decoderConfig(
+                                  WebSocketDecoderConfig.newBuilder()
+                                      .maxFramePayloadLength(10_000)
+                                      .withUTF8Validator(false)
+                                      .allowExtensions(false)
+                                      .allowMaskMismatch(allowMaskMismatch)
+                                      .expectMaskedFrames(expectMaskedFrames)
+                                      .build())
+                              .webSocketCallbacksHandler(webSocketHandler)
+                              .build();
+
+                  ChannelPipeline pipeline = ch.pipeline();
+                  pipeline.addLast(http1Codec, http1Aggregator, webSocketProtocolHandler);
+                } catch (Exception e) {
+                  logger.info("a", e);
+                }
+              }
+            })
         .bind("localhost", 0)
         .sync()
         .channel();
@@ -589,6 +538,112 @@ class WebSocketCodecTest {
 
       ch.pipeline()
           .addLast(http1Codec, http1Aggregator, webSocketProtocolHandler, webSocketHandler);
+    }
+  }
+
+  static class StrictMaskEncoderServerHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    private final CompletableFuture<Void> onFrameExchangeComplete = new CompletableFuture<>();
+    private final CompletableFuture<Void> onFramesRead = new CompletableFuture<>();
+    private WebSocketFrameFactory webSocketFrameFactory;
+
+    StrictMaskEncoderServerHandler() {}
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      if (opcode == WebSocketProtocol.OPCODE_BINARY) {
+        ByteBuf binaryFrame =
+            webSocketFrameFactory.createBinaryFrame(ctx.alloc(), payload.readableBytes());
+        binaryFrame.writeBytes(payload);
+        ctx.writeAndFlush(webSocketFrameFactory.mask(binaryFrame));
+      }
+      payload.release();
+      if (!onFramesRead.isDone()) {
+        onFramesRead.complete(null);
+      }
+    }
+
+    @Override
+    public void onExceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+      if (!onFrameExchangeComplete.isDone()) {
+        onFrameExchangeComplete.completeExceptionally(cause);
+      }
+    }
+
+    CompletableFuture<Void> onFramesRead() {
+      return onFramesRead;
+    }
+  }
+
+  static class StrictMaskEncoderClientHandler
+      implements WebSocketCallbacksHandler, WebSocketFrameListener {
+    private final CompletableFuture<Void> onCloseFrameRead = new CompletableFuture<>();
+    private final CompletableFuture<Void> onBinaryFrameRead = new CompletableFuture<>();
+    private volatile int framesReadCount = 0;
+    private WebSocketFrameFactory webSocketFrameFactory;
+
+    StrictMaskEncoderClientHandler() {}
+
+    @Override
+    public WebSocketFrameListener exchange(
+        ChannelHandlerContext ctx, WebSocketFrameFactory webSocketFrameFactory) {
+      this.webSocketFrameFactory = webSocketFrameFactory;
+      return this;
+    }
+
+    @Override
+    public void onOpen(ChannelHandlerContext ctx) {
+      WebSocketFrameFactory factory = webSocketFrameFactory;
+      ByteBuf frame = factory.createBinaryFrame(ctx.alloc(), 1);
+      frame.writeByte(0xFE);
+      ctx.writeAndFlush(factory.mask(frame));
+    }
+
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
+    @Override
+    public void onChannelRead(
+        ChannelHandlerContext ctx, boolean finalFragment, int rsv, int opcode, ByteBuf payload) {
+      /*written on eventloop thread only*/
+      framesReadCount++;
+      if (opcode == WebSocketProtocol.OPCODE_CLOSE) {
+        int code = WebSocketCloseStatus.PROTOCOL_ERROR.code();
+        if (code == CloseFramePayload.statusCode(payload)) {
+          onCloseFrameRead.complete(null);
+        } else {
+          onCloseFrameRead.completeExceptionally(
+              new AssertionError("unexpected close status code: " + code));
+        }
+      } else if (opcode == WebSocketProtocol.OPCODE_BINARY) {
+        onBinaryFrameRead.complete(null);
+      }
+      payload.release();
+    }
+
+    @Override
+    public void onExceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+      if (!onCloseFrameRead.isDone()) {
+        onCloseFrameRead.completeExceptionally(cause);
+      }
+    }
+
+    CompletableFuture<Void> onCloseFrameRead() {
+      return onCloseFrameRead;
+    }
+
+    CompletableFuture<Void> onBinaryFrameRead() {
+      return onBinaryFrameRead;
+    }
+
+    int framesReadCount() {
+      return framesReadCount;
     }
   }
 

@@ -56,6 +56,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
   private final WebSocketDecoderConfig decoderConfig;
   private final long handshakeTimeoutMillis;
   private final WebSocketCallbacksHandler webSocketHandler;
+  private final boolean nomaskingExtension;
   private ChannelPromise handshakeCompleted;
 
   public static Builder create() {
@@ -67,11 +68,13 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
       String subprotocols,
       WebSocketDecoderConfig webSocketDecoderConfig,
       long handshakeTimeoutMillis,
+      boolean nomaskingExtension,
       @Nullable WebSocketCallbacksHandler webSocketHandler) {
     this.path = path;
     this.subprotocols = subprotocols;
     this.decoderConfig = webSocketDecoderConfig;
     this.handshakeTimeoutMillis = handshakeTimeoutMillis;
+    this.nomaskingExtension = nomaskingExtension;
     this.webSocketHandler = webSocketHandler;
   }
 
@@ -143,7 +146,8 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     }
 
     WebSocketServerHandshaker.Factory handshakerFactory =
-        new WebSocketServerHandshaker.Factory(path, subprotocols, decoderConfig);
+        new WebSocketServerHandshaker.Factory(
+            path, subprotocols, nomaskingExtension, decoderConfig);
 
     WebSocketServerHandshaker handshaker = handshakerFactory.newHandshaker(ctx, request);
     if (handshaker == null) {
@@ -253,6 +257,7 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     private WebSocketDecoderConfig decoderConfig = DEFAULT_DECODER_CONFIG;
     private WebSocketCallbacksHandler webSocketCallbacksHandler;
     private long handshakeTimeoutMillis;
+    private boolean nomaskingExtension;
 
     private Builder() {}
 
@@ -280,15 +285,24 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
 
     /**
      * @param decoderConfig webSocket decoder config that corresponds to library declared scope: no
-     *     extensions, no utf8 validation, maxFrameLength is 65_635. For default decoder:
-     *     allowMaskMismatch = true. For small decoder allowMaskMismatch = false, expectMaskedFrames
-     *     = false, maxFramePayloadLength = 125. Must be non-null.
+     *     extensions, no utf8 validation, maxFrameLength is [125, 65_635] range. Must be non-null.
      * @return this Builder instance
      */
     public Builder decoderConfig(WebSocketDecoderConfig decoderConfig) {
       this.decoderConfig =
           WebSocketProtocol.validateDecoderConfig(
               Objects.requireNonNull(decoderConfig, "decoderConfig"));
+      return this;
+    }
+
+    /**
+     * @param nomaskingExtension enables "no-masking" extension <a
+     *     href="https://datatracker.ietf.org/doc/html/draft-damjanovic-websockets-nomasking-02">draft</a>.
+     *     Takes precedence over masking related configuration.
+     * @return this Builder instance
+     */
+    public Builder nomaskingExtension(boolean nomaskingExtension) {
+      this.nomaskingExtension = nomaskingExtension;
       return this;
     }
 
@@ -314,7 +328,12 @@ public final class WebSocketServerProtocolHandler extends ChannelInboundHandlerA
     /** @return new WebSocketServerProtocolHandler instance */
     public WebSocketServerProtocolHandler build() {
       return new WebSocketServerProtocolHandler(
-          path, subprotocols, decoderConfig, handshakeTimeoutMillis, webSocketCallbacksHandler);
+          path,
+          subprotocols,
+          decoderConfig,
+          handshakeTimeoutMillis,
+          nomaskingExtension,
+          webSocketCallbacksHandler);
     }
 
     private static long requirePositive(long val, String desc) {
