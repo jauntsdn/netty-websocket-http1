@@ -28,11 +28,7 @@ interface WebSocketCallbacksFrameDecoder extends WebSocketFrameDecoder {
 
   static WebSocketCallbacksFrameDecoder frameDecoder(
       int maxFramePayloadLength, boolean expectMaskedFrames, boolean allowMaskMismatch) {
-
-    Boolean strictExpectMaskedFrames = null;
-    if (!allowMaskMismatch) {
-      strictExpectMaskedFrames = expectMaskedFrames;
-    }
-    return new WebSocketMaskedDecoder(maxFramePayloadLength, strictExpectMaskedFrames);
+    Boolean lenientExpectMaskedFrames = allowMaskMismatch ? null : expectMaskedFrames;
+    return new WebSocketMaskedDecoder(maxFramePayloadLength, lenientExpectMaskedFrames);
   }
 }
