@@ -97,6 +97,7 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
   }
 
   @Override
+  @SuppressWarnings("deprecation")
   public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
     WebSocketFrameListener listener = webSocketFrameListener;
     if (listener != null) {
