@@ -487,6 +487,10 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
   }
 
   static void unmask(ByteBuf payload, int mask) {
+    if (mask == 0) {
+      return;
+    }
+
     int readableBytes = payload.readableBytes();
     int cur = 0;
 
