@@ -24,6 +24,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
+import java.util.function.IntSupplier;
 
 public final class WebSocketProtocol {
   public static final byte OPCODE_CONT = 0x0;
@@ -263,7 +264,12 @@ public final class WebSocketProtocol {
         maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch);
   }
 
+  public static WebSocketFrameEncoder frameEncoder(
+      boolean expectMaskedFrames, IntSupplier externalMask) {
+    return WebSocketCallbacksFrameEncoder.frameEncoder(expectMaskedFrames, externalMask);
+  }
+
   public static WebSocketFrameEncoder frameEncoder(boolean expectMaskedFrames) {
-    return WebSocketCallbacksFrameEncoder.frameEncoder(expectMaskedFrames);
+    return WebSocketCallbacksFrameEncoder.frameEncoder(expectMaskedFrames, null);
   }
 }

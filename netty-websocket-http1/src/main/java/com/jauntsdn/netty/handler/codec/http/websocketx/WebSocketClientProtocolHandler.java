@@ -33,6 +33,7 @@ import java.net.URISyntaxException;
 import java.nio.channels.ClosedChannelException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntSupplier;
 import javax.annotation.Nullable;
 
 /**
@@ -47,6 +48,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   private final boolean expectMaskedFrames;
   private final boolean allowMaskMismatch;
   private final boolean nomaskingExtension;
+  private final IntSupplier externalMask;
   private final int maxFramePayloadLength;
   private final long handshakeTimeoutMillis;
   private final WebSocketCallbacksHandler webSocketHandler;
@@ -63,6 +65,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
       boolean expectMaskedFrames,
       boolean allowMaskMismatch,
       boolean nomaskingExtension,
+      IntSupplier externalMask,
       int maxFramePayloadLength,
       long handshakeTimeoutMillis,
       @Nullable WebSocketCallbacksHandler webSocketHandler) {
@@ -74,6 +77,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     this.expectMaskedFrames = expectMaskedFrames;
     this.allowMaskMismatch = allowMaskMismatch;
     this.nomaskingExtension = nomaskingExtension;
+    this.externalMask = externalMask;
     this.maxFramePayloadLength = maxFramePayloadLength;
     this.handshakeTimeoutMillis = handshakeTimeoutMillis;
     this.webSocketHandler = webSocketHandler;
@@ -160,13 +164,20 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   private WebSocketClientHandshaker webSocketHandshaker(URI uri) {
     return nomaskingExtension && WebSocketClientNomaskingHandshaker.supportsNoMaskingExtension(uri)
         ? new WebSocketClientNomaskingHandshaker(
-            uri, subprotocol, headers, maxFramePayloadLength, expectMaskedFrames, allowMaskMismatch)
+            uri,
+            subprotocol,
+            headers,
+            maxFramePayloadLength,
+            expectMaskedFrames,
+            allowMaskMismatch,
+            externalMask)
         : new WebSocketClientHandshaker(
             uri,
             subprotocol,
             headers,
             maxFramePayloadLength,
             mask,
+            externalMask,
             expectMaskedFrames,
             allowMaskMismatch);
   }
@@ -267,6 +278,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
     private long handshakeTimeoutMillis = 15_000;
     private WebSocketCallbacksHandler webSocketHandler;
     private boolean nomaskingExtension;
+    private IntSupplier externalMask;
 
     private Builder() {}
 
@@ -317,6 +329,15 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
      */
     public Builder mask(boolean mask) {
       this.mask = mask;
+      return this;
+    }
+
+    /**
+     * @param externalMask generator for payload masking key. May be null.
+     * @return this Builder instance
+     */
+    public Builder mask(@Nullable IntSupplier externalMask) {
+      this.externalMask = externalMask;
       return this;
     }
 
@@ -386,6 +407,7 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
           EXPECT_MASKED_FRAMES,
           maskMismatch,
           nomaskingExtension,
+          externalMask,
           maxPayloadLength,
           handshakeTimeoutMillis,
           webSocketHandler);

@@ -48,7 +48,7 @@ public class WebSocketServerHandshaker extends WebSocketServerHandshaker13 {
 
   @Override
   protected WebSocketFrameEncoder newWebSocketEncoder() {
-    return WebSocketCallbacksFrameEncoder.frameEncoder(false);
+    return WebSocketCallbacksFrameEncoder.frameEncoder(false, null);
   }
 
   public static final class Factory {

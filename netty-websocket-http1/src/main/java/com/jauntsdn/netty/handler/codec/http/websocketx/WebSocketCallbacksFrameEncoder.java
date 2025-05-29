@@ -18,12 +18,20 @@ package com.jauntsdn.netty.handler.codec.http.websocketx;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
+import java.util.function.IntSupplier;
 
 interface WebSocketCallbacksFrameEncoder extends WebSocketFrameEncoder {
 
   WebSocketFrameFactory frameFactory(ChannelHandlerContext ctx);
 
-  static WebSocketCallbacksFrameEncoder frameEncoder(boolean performMasking) {
-    return performMasking ? WebSocketMaskedEncoder.INSTANCE : WebSocketNonMaskedEncoder.INSTANCE;
+  static WebSocketCallbacksFrameEncoder frameEncoder(
+      boolean performMasking, IntSupplier externalMask) {
+    if (performMasking) {
+      if (externalMask != null) {
+        return new WebSocketMaskedEncoder(externalMask);
+      }
+      return WebSocketMaskedEncoder.INSTANCE;
+    }
+    return WebSocketNonMaskedEncoder.INSTANCE;
   }
 }
