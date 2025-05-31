@@ -48,7 +48,7 @@ final class WebSocketNonMaskedEncoder extends ChannelOutboundHandlerAdapter
     return FrameFactory.INSTANCE;
   }
 
-  static class FrameFactory
+  static final class FrameFactory
       implements WebSocketFrameFactory,
           WebSocketFrameFactory.Encoder,
           WebSocketFrameFactory.BulkEncoder {

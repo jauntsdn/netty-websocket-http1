@@ -105,7 +105,7 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
 
     static final WebSocketFrameFactory INSTANCE = new FrameFactory();
 
-    ByteBuf createDataFrame(
+    final ByteBuf createDataFrame(
         ByteBufAllocator allocator, int payloadSize, int prefixSmall, int prefixMedium) {
       int mask = mask();
       if (payloadSize <= 125) {
@@ -125,35 +125,35 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf createBinaryFrame(ByteBufAllocator allocator, int payloadSize) {
+    public final ByteBuf createBinaryFrame(ByteBufAllocator allocator, int payloadSize) {
       return createDataFrame(allocator, payloadSize, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
     }
 
     @Override
-    public ByteBuf createTextFrame(ByteBufAllocator allocator, int payloadSize) {
+    public final ByteBuf createTextFrame(ByteBufAllocator allocator, int payloadSize) {
       return createDataFrame(allocator, payloadSize, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
     }
 
     @Override
-    public ByteBuf createBinaryFragmentStart(ByteBufAllocator allocator, int binaryDataSize) {
+    public final ByteBuf createBinaryFragmentStart(ByteBufAllocator allocator, int binaryDataSize) {
       return createDataFrame(
           allocator, binaryDataSize, BINARY_FRAGMENT_START_SMALL, BINARY_FRAGMENT_START_MEDIUM);
     }
 
     @Override
-    public ByteBuf createTextFragmentStart(ByteBufAllocator allocator, int textDataSize) {
+    public final ByteBuf createTextFragmentStart(ByteBufAllocator allocator, int textDataSize) {
       return createDataFrame(
           allocator, textDataSize, TEXT_FRAGMENT_START_SMALL, TEXT_FRAGMENT_START_MEDIUM);
     }
 
     @Override
-    public ByteBuf createContinuationFragment(ByteBufAllocator allocator, int dataSize) {
+    public final ByteBuf createContinuationFragment(ByteBufAllocator allocator, int dataSize) {
       return createDataFrame(
           allocator, dataSize, DATA_FRAGMENT_CONTINUATION_SMALL, DATA_FRAGMENT_CONTINUATION_MEDIUM);
     }
 
     @Override
-    public ByteBuf createContinuationFragmentEnd(ByteBufAllocator allocator, int dataSize) {
+    public final ByteBuf createContinuationFragmentEnd(ByteBufAllocator allocator, int dataSize) {
       return createDataFrame(
           allocator,
           dataSize,
@@ -162,7 +162,8 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf createCloseFrame(ByteBufAllocator allocator, int statusCode, String reason) {
+    public final ByteBuf createCloseFrame(
+        ByteBufAllocator allocator, int statusCode, String reason) {
       if (!WebSocketCloseStatus.isValidStatusCode(statusCode)) {
         throw new IllegalArgumentException("incorrect close status code: " + statusCode);
       }
@@ -188,7 +189,7 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf createPingFrame(ByteBufAllocator allocator, int payloadSize) {
+    public final ByteBuf createPingFrame(ByteBufAllocator allocator, int payloadSize) {
       if (payloadSize <= 125) {
         int mask = mask();
         return allocator
@@ -201,7 +202,7 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf createPongFrame(ByteBufAllocator allocator, int payloadSize) {
+    public final ByteBuf createPongFrame(ByteBufAllocator allocator, int payloadSize) {
       if (payloadSize <= 125) {
         int mask = mask();
         return allocator
@@ -214,7 +215,7 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf mask(ByteBuf frame) {
+    public final ByteBuf mask(ByteBuf frame) {
       int maskIndex = frame.readerIndex();
       int mask = frame.getInt(maskIndex);
       mask(mask, frame, maskIndex + /*mask size*/ 4, frame.writerIndex());
@@ -236,34 +237,34 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
+    public final ByteBuf encodeBinaryFrame(ByteBuf binaryFrame) {
       return encodeDataFrame(binaryFrame, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
     }
 
     @Override
-    public ByteBuf encodeTextFrame(ByteBuf textFrame) {
+    public final ByteBuf encodeTextFrame(ByteBuf textFrame) {
       return encodeDataFrame(textFrame, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
     }
 
     @Override
-    public ByteBuf encodeBinaryFragmentStart(ByteBuf fragmentFrame) {
+    public final ByteBuf encodeBinaryFragmentStart(ByteBuf fragmentFrame) {
       return encodeDataFrame(
           fragmentFrame, BINARY_FRAGMENT_START_SMALL, BINARY_FRAGMENT_START_MEDIUM);
     }
 
     @Override
-    public ByteBuf encodeTextFragmentStart(ByteBuf fragmentFrame) {
+    public final ByteBuf encodeTextFragmentStart(ByteBuf fragmentFrame) {
       return encodeDataFrame(fragmentFrame, TEXT_FRAGMENT_START_SMALL, TEXT_FRAGMENT_START_MEDIUM);
     }
 
     @Override
-    public ByteBuf encodeContinuationFragment(ByteBuf fragmentFrame) {
+    public final ByteBuf encodeContinuationFragment(ByteBuf fragmentFrame) {
       return encodeDataFrame(
           fragmentFrame, DATA_FRAGMENT_CONTINUATION_SMALL, DATA_FRAGMENT_CONTINUATION_MEDIUM);
     }
 
     @Override
-    public ByteBuf encodeContinuationFragmentEnd(ByteBuf fragmentFrame) {
+    public final ByteBuf encodeContinuationFragmentEnd(ByteBuf fragmentFrame) {
       return encodeDataFrame(
           fragmentFrame,
           DATA_FRAGMENT_CONTINUATION_END_SMALL,
@@ -271,11 +272,11 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public int sizeofFragment(int payloadSize) {
+    public final int sizeofFragment(int payloadSize) {
       return sizeOfDataFrame(payloadSize);
     }
 
-    ByteBuf encodeDataFrame(ByteBuf binaryFrame, int prefixSmall, int prefixMedium) {
+    final ByteBuf encodeDataFrame(ByteBuf binaryFrame, int prefixSmall, int prefixMedium) {
       int frameSize = binaryFrame.readableBytes();
       int smallPrefixSize = 6;
       if (frameSize <= 125 + smallPrefixSize) {
@@ -298,16 +299,17 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public int encodeBinaryFramePrefix(ByteBuf byteBuf, int payloadSize) {
+    public final int encodeBinaryFramePrefix(ByteBuf byteBuf, int payloadSize) {
       return encodeDataFramePrefix(byteBuf, payloadSize, BINARY_FRAME_SMALL, BINARY_FRAME_MEDIUM);
     }
 
     @Override
-    public int encodeTextFramePrefix(ByteBuf byteBuf, int textPayloadSize) {
+    public final int encodeTextFramePrefix(ByteBuf byteBuf, int textPayloadSize) {
       return encodeDataFramePrefix(byteBuf, textPayloadSize, TEXT_FRAME_SMALL, TEXT_FRAME_MEDIUM);
     }
 
-    int encodeDataFramePrefix(ByteBuf byteBuf, int payloadSize, int prefixSmall, int prefixMedium) {
+    final int encodeDataFramePrefix(
+        ByteBuf byteBuf, int payloadSize, int prefixSmall, int prefixMedium) {
       if (payloadSize <= 125) {
         int mask = mask();
         byteBuf.writeShort(prefixSmall | payloadSize);
@@ -324,12 +326,12 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public ByteBuf maskBinaryFrame(ByteBuf byteBuf, int mask, int payloadSize) {
+    public final ByteBuf maskBinaryFrame(ByteBuf byteBuf, int mask, int payloadSize) {
       return maskDataFrame(byteBuf, mask, payloadSize);
     }
 
     @Override
-    public ByteBuf maskTextFrame(ByteBuf byteBuf, int mask, int textPayloadSize) {
+    public final ByteBuf maskTextFrame(ByteBuf byteBuf, int mask, int textPayloadSize) {
       return maskDataFrame(byteBuf, mask, textPayloadSize);
     }
 
@@ -340,12 +342,12 @@ final class WebSocketMaskedEncoder extends ChannelOutboundHandlerAdapter
     }
 
     @Override
-    public int sizeofBinaryFrame(int payloadSize) {
+    public final int sizeofBinaryFrame(int payloadSize) {
       return sizeOfDataFrame(payloadSize);
     }
 
     @Override
-    public int sizeofTextFrame(int textPayloadSize) {
+    public final int sizeofTextFrame(int textPayloadSize) {
       return sizeOfDataFrame(textPayloadSize);
     }
 
