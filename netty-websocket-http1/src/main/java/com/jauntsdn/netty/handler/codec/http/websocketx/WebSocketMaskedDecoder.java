@@ -50,7 +50,7 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
 
   @Override
   public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
-    partialPrefix = ctx.alloc().buffer(2, 2);
+    partialPrefix = Unpooled.buffer(2, 2);
     super.handlerAdded(ctx);
   }
 
