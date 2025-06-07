@@ -35,6 +35,12 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
 
   abstract WebSocketFrameFactory frameFactory();
 
+  abstract void closeInbound();
+
+  final void onFrameRead(ChannelHandlerContext ctx, boolean finFlag, int opcode, ByteBuf payload) {
+    webSocketFrameListener.onChannelRead(ctx, finFlag, 0, opcode, payload);
+  }
+
   @Override
   public void channelInactive(ChannelHandlerContext ctx) throws Exception {
     WebSocketFrameListener listener = webSocketFrameListener;
@@ -67,7 +73,7 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
   }
 
   @Override
-  public void channelReadComplete(ChannelHandlerContext ctx) {
+  public final void channelReadComplete(ChannelHandlerContext ctx) {
     WebSocketFrameListener listener = webSocketFrameListener;
     if (listener != null) {
       listener.onChannelReadComplete(ctx);
@@ -77,7 +83,7 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
   }
 
   @Override
-  public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
+  public final void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
     WebSocketFrameListener listener = webSocketFrameListener;
     if (listener != null) {
       listener.onUserEventTriggered(ctx, evt);
@@ -87,7 +93,7 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
   }
 
   @Override
-  public void channelWritabilityChanged(ChannelHandlerContext ctx) {
+  public final void channelWritabilityChanged(ChannelHandlerContext ctx) {
     WebSocketFrameListener listener = webSocketFrameListener;
     if (listener != null) {
       listener.onChannelWritabilityChanged(ctx);
@@ -98,7 +104,7 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
 
   @Override
   @SuppressWarnings("deprecation")
-  public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+  public final void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
     WebSocketFrameListener listener = webSocketFrameListener;
     if (listener != null) {
       listener.onExceptionCaught(ctx, cause);
@@ -107,26 +113,20 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
     }
   }
 
-  abstract void closeInbound();
-
-  final void onFrameRead(ChannelHandlerContext ctx, boolean finFlag, int opcode, ByteBuf payload) {
-    webSocketFrameListener.onChannelRead(ctx, finFlag, 0, opcode, payload);
-  }
-
   /*boilerplate*/
 
   @Override
-  public void channelRegistered(ChannelHandlerContext ctx) {
+  public final void channelRegistered(ChannelHandlerContext ctx) {
     ctx.fireChannelRegistered();
   }
 
   @Override
-  public void channelUnregistered(ChannelHandlerContext ctx) {
+  public final void channelUnregistered(ChannelHandlerContext ctx) {
     ctx.fireChannelUnregistered();
   }
 
   @Override
-  public void channelActive(ChannelHandlerContext ctx) {
+  public final void channelActive(ChannelHandlerContext ctx) {
     ctx.fireChannelActive();
   }
 
@@ -136,7 +136,7 @@ abstract class WebSocketDecoder implements WebSocketCallbacksFrameDecoder {
   }
 
   @Override
-  public void handlerRemoved(ChannelHandlerContext ctx) {
+  public final void handlerRemoved(ChannelHandlerContext ctx) {
     /*noop*/
   }
 }
