@@ -27,8 +27,10 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
 import java.net.URI;
 import java.util.Objects;
+import java.util.function.IntSupplier;
 
 final class WebSocketClientNomaskingHandshaker extends WebSocketClientHandshaker {
+  private final IntSupplier externalMask;
   private Channel channel;
 
   WebSocketClientNomaskingHandshaker(
@@ -37,7 +39,8 @@ final class WebSocketClientNomaskingHandshaker extends WebSocketClientHandshaker
       HttpHeaders customHeaders,
       int maxFramePayloadLength,
       boolean expectMaskedFrames,
-      boolean allowMaskMismatch) {
+      boolean allowMaskMismatch,
+      IntSupplier externalMask) {
     super(
         Objects.requireNonNull(webSocketURL, "webSocketURL"),
         subprotocol,
@@ -46,6 +49,7 @@ final class WebSocketClientNomaskingHandshaker extends WebSocketClientHandshaker
         false,
         expectMaskedFrames,
         allowMaskMismatch);
+    this.externalMask = externalMask;
   }
 
   public static boolean supportsNoMaskingExtension(URI webSocketURL) {
@@ -59,7 +63,7 @@ final class WebSocketClientNomaskingHandshaker extends WebSocketClientHandshaker
 
   @Override
   protected WebSocketFrameEncoder newWebSocketEncoder() {
-    return WebSocketCallbacksFrameEncoder.frameEncoder(false);
+    return WebSocketCallbacksFrameEncoder.frameEncoder(false, externalMask);
   }
 
   @Override
@@ -92,7 +96,7 @@ final class WebSocketClientNomaskingHandshaker extends WebSocketClientHandshaker
       pipeline.replace(
           WebSocketFrameEncoder.class,
           "ws-encoder",
-          WebSocketCallbacksFrameEncoder.frameEncoder(true));
+          WebSocketCallbacksFrameEncoder.frameEncoder(true, externalMask));
     }
   }
 }

@@ -54,7 +54,7 @@ final class WebSocketServerNomaskingHandshaker extends WebSocketServerHandshaker
 
   @Override
   protected WebSocketFrameEncoder newWebSocketEncoder() {
-    return WebSocketCallbacksFrameEncoder.frameEncoder(false);
+    return WebSocketCallbacksFrameEncoder.frameEncoder(false, null);
   }
 
   @Override

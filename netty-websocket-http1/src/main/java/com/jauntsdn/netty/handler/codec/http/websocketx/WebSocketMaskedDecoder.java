@@ -20,11 +20,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
+import javax.annotation.Nullable;
 
 final class WebSocketMaskedDecoder extends WebSocketDecoder {
-  /*if null, mask mismatch is allowed*/
-  Boolean expectMaskedFrames;
   final int maxFramePayloadLength;
+  Boolean expectMaskedFrames;
 
   WebSocketFrameFactory frameFactory;
 
@@ -43,14 +43,14 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
   /* non-negative value means fragmentation is in progress*/
   int fragmentedTotalLength = WebSocketProtocol.VALIDATION_RESULT_NON_FRAGMENTING;
 
-  WebSocketMaskedDecoder(int maxFramePayloadLength, Boolean expectMaskedFrames) {
+  WebSocketMaskedDecoder(int maxFramePayloadLength, @Nullable Boolean expectMaskedFrames) {
     this.maxFramePayloadLength = maxFramePayloadLength;
     this.expectMaskedFrames = expectMaskedFrames;
   }
 
   @Override
   public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
-    partialPrefix = ctx.alloc().buffer(2, 2);
+    partialPrefix = Unpooled.buffer(2, 2);
     super.handlerAdded(ctx);
   }
 
@@ -96,7 +96,9 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
             int code = (prefix >> 24) & 0xF;
 
             Boolean expectMasked = expectMaskedFrames;
-            if (expectMasked != null && maskFlag != expectMasked) {
+            if (expectMasked == null) {
+              expectMaskedFrames = maskFlag;
+            } else if (maskFlag != expectMasked) {
               WebSocketProtocol.close(
                   ctx,
                   this,
@@ -183,7 +185,9 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
             boolean maskFlag = masking = (prefix & 0x80) == 0x80;
 
             Boolean expectMasked = expectMaskedFrames;
-            if (expectMasked != null && maskFlag != expectMasked) {
+            if (expectMasked == null) {
+              expectMaskedFrames = maskFlag;
+            } else if (maskFlag != expectMasked) {
               WebSocketProtocol.close(
                   ctx,
                   this,
@@ -319,7 +323,9 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
                 boolean maskFlag = masking = (prefix & 0x80) == 0x80;
 
                 Boolean expectMasked = expectMaskedFrames;
-                if (expectMasked != null && maskFlag != expectMasked) {
+                if (expectMasked == null) {
+                  expectMaskedFrames = maskFlag;
+                } else if (maskFlag != expectMasked) {
                   WebSocketProtocol.close(
                       ctx,
                       this,
@@ -481,6 +487,10 @@ final class WebSocketMaskedDecoder extends WebSocketDecoder {
   }
 
   static void unmask(ByteBuf payload, int mask) {
+    if (mask == 0) {
+      return;
+    }
+
     int readableBytes = payload.readableBytes();
     int cur = 0;
 

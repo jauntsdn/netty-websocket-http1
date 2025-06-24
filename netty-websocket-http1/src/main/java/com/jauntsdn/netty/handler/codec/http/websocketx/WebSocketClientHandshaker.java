@@ -23,9 +23,12 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
 import io.netty.handler.codec.http.websocketx.WebSocketVersion;
 import java.net.URI;
 import java.util.Objects;
+import java.util.function.IntSupplier;
+import javax.annotation.Nullable;
 
 public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
   private final boolean expectMaskedFrames;
+  private final IntSupplier externalMask;
 
   public WebSocketClientHandshaker(
       URI webSocketURL,
@@ -33,6 +36,7 @@ public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
       HttpHeaders customHeaders,
       int maxFramePayloadLength,
       boolean performMasking,
+      @Nullable IntSupplier externalMask,
       boolean expectMaskedFrames,
       boolean allowMaskMismatch) {
     super(
@@ -46,6 +50,26 @@ public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
         allowMaskMismatch,
         /*unused*/ -1);
     this.expectMaskedFrames = expectMaskedFrames;
+    this.externalMask = externalMask;
+  }
+
+  public WebSocketClientHandshaker(
+      URI webSocketURL,
+      String subprotocol,
+      HttpHeaders customHeaders,
+      int maxFramePayloadLength,
+      boolean performMasking,
+      boolean expectMaskedFrames,
+      boolean allowMaskMismatch) {
+    this(
+        webSocketURL,
+        subprotocol,
+        customHeaders,
+        maxFramePayloadLength,
+        performMasking,
+        null,
+        expectMaskedFrames,
+        allowMaskMismatch);
   }
 
   @Override
@@ -56,6 +80,6 @@ public class WebSocketClientHandshaker extends WebSocketClientHandshaker13 {
 
   @Override
   protected WebSocketFrameEncoder newWebSocketEncoder() {
-    return WebSocketCallbacksFrameEncoder.frameEncoder(isPerformMasking());
+    return WebSocketCallbacksFrameEncoder.frameEncoder(isPerformMasking(), externalMask);
   }
 }

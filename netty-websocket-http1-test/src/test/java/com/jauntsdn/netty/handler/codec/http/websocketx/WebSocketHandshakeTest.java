@@ -59,8 +59,10 @@ import java.nio.channels.ClosedChannelException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
+import java.util.function.IntSupplier;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -389,6 +391,42 @@ public class WebSocketHandshakeTest {
   }
 
   @Timeout(15)
+  @Test
+  void externalMaskEnabledMasking() throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(true, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    Channel s = server = testServer("/", decoderConfig, serverHandler);
+
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    IntSupplier externalMask = () -> ThreadLocalRandom.current().nextInt();
+    Channel client =
+        testClient(s.localAddress(), "/", null, true, externalMask, false, 125, clientHandler);
+
+    clientHandler.onOpen.join();
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isNotNull()
+        .isExactlyInstanceOf(WebSocketMaskedEncoder.ExternalMaskFrameFactory.class);
+  }
+
+  @Timeout(15)
+  @Test
+  void externalMaskDisabledMasking() throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(false, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    Channel s = server = testServer("/", decoderConfig, serverHandler);
+
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    IntSupplier externalMask = () -> ThreadLocalRandom.current().nextInt();
+    Channel client =
+        testClient(s.localAddress(), "/", null, false, externalMask, false, 125, clientHandler);
+
+    clientHandler.onOpen.join();
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isNotNull()
+        .isExactlyInstanceOf(WebSocketNonMaskedEncoder.FrameFactory.class);
+  }
+
+  @Timeout(15)
   @CsvSource(
       value = {"true:false", "false:false", "false:true"},
       delimiter = ':')
@@ -480,6 +518,38 @@ public class WebSocketHandshakeTest {
   }
 
   @Timeout(15)
+  @Test
+  void nomaskingExtensionAcceptedExternalMask() throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(true, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    ChannelState serverChannelState = new ChannelState();
+    Channel s =
+        server =
+            testNomaskingExtensionServer(
+                true, serverSslContext, decoderConfig, serverHandler, serverChannelState);
+
+    IntSupplier externalMask = () -> ThreadLocalRandom.current().nextInt();
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    ChannelState clientChannelState = new ChannelState();
+    Channel client =
+        testNomaskingExtensionClient(
+            s.localAddress(),
+            true,
+            clientSslContext,
+            true,
+            externalMask,
+            false,
+            125,
+            clientHandler,
+            clientChannelState);
+
+    clientHandler.onOpen.get();
+
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isExactlyInstanceOf(WebSocketNonMaskedEncoder.FrameFactory.class);
+  }
+
+  @Timeout(15)
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   void nomaskingExtensionRejected(boolean expectMasked) throws Exception {
@@ -522,6 +592,38 @@ public class WebSocketHandshakeTest {
             serverResponse.containsValue(
                 HttpHeaderNames.SEC_WEBSOCKET_EXTENSIONS, "no-masking", true))
         .isTrue();
+  }
+
+  @Timeout(15)
+  @Test
+  void nomaskingExtensionRejectedExternalMask() throws Exception {
+    WebSocketDecoderConfig decoderConfig = webSocketDecoderConfig(true, false, 125);
+    TestWebSocketHandler serverHandler = new TestWebSocketHandler();
+    ChannelState serverChannelState = new ChannelState();
+    Channel s =
+        server =
+            testNomaskingExtensionServer(
+                false, serverSslContext, decoderConfig, serverHandler, serverChannelState);
+
+    IntSupplier externalMask = () -> ThreadLocalRandom.current().nextInt();
+    TestWebSocketHandler clientHandler = new TestWebSocketHandler();
+    ChannelState clientChannelState = new ChannelState();
+    Channel client =
+        testNomaskingExtensionClient(
+            s.localAddress(),
+            true,
+            clientSslContext,
+            true,
+            externalMask,
+            false,
+            125,
+            clientHandler,
+            clientChannelState);
+
+    clientHandler.onOpen.get();
+
+    Assertions.assertThat(clientHandler.webSocketFrameFactory)
+        .isExactlyInstanceOf(WebSocketMaskedEncoder.ExternalMaskFrameFactory.class);
   }
 
   @Timeout(15)
@@ -582,6 +684,27 @@ public class WebSocketHandshakeTest {
       int maxFramePayloadLength,
       WebSocketCallbacksHandler webSocketCallbacksHandler)
       throws InterruptedException {
+    return testClient(
+        address,
+        path,
+        subprotocol,
+        mask,
+        null,
+        allowMaskMismatch,
+        maxFramePayloadLength,
+        webSocketCallbacksHandler);
+  }
+
+  static Channel testClient(
+      SocketAddress address,
+      String path,
+      String subprotocol,
+      boolean mask,
+      IntSupplier externalMask,
+      boolean allowMaskMismatch,
+      int maxFramePayloadLength,
+      WebSocketCallbacksHandler webSocketCallbacksHandler)
+      throws InterruptedException {
     return new Bootstrap()
         .group(new NioEventLoopGroup(1))
         .channel(NioSocketChannel.class)
@@ -597,6 +720,7 @@ public class WebSocketHandshakeTest {
                     WebSocketClientProtocolHandler.create()
                         .path(path)
                         .mask(mask)
+                        .mask(externalMask)
                         .allowMaskMismatch(allowMaskMismatch)
                         .maxFramePayloadLength(maxFramePayloadLength)
                         .webSocketHandler(webSocketCallbacksHandler)
@@ -680,6 +804,29 @@ public class WebSocketHandshakeTest {
       WebSocketCallbacksHandler webSocketCallbacksHandler,
       ChannelState channelState)
       throws InterruptedException {
+    return testNomaskingExtensionClient(
+        address,
+        nomaskingExtension,
+        sslContext,
+        mask,
+        null,
+        allowMaskMismatch,
+        maxFramePayloadLength,
+        webSocketCallbacksHandler,
+        channelState);
+  }
+
+  static Channel testNomaskingExtensionClient(
+      SocketAddress address,
+      boolean nomaskingExtension,
+      SslContext sslContext,
+      boolean mask,
+      IntSupplier externalMask,
+      boolean allowMaskMismatch,
+      int maxFramePayloadLength,
+      WebSocketCallbacksHandler webSocketCallbacksHandler,
+      ChannelState channelState)
+      throws InterruptedException {
     return new Bootstrap()
         .group(new NioEventLoopGroup(1))
         .channel(NioSocketChannel.class)
@@ -696,6 +843,7 @@ public class WebSocketHandshakeTest {
                         .path("/")
                         .nomaskingExtension(nomaskingExtension)
                         .mask(mask)
+                        .mask(externalMask)
                         .allowMaskMismatch(allowMaskMismatch)
                         .maxFramePayloadLength(maxFramePayloadLength)
                         .webSocketHandler(webSocketCallbacksHandler)
