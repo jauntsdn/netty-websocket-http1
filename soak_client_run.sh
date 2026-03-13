@@ -1,3 +1,3 @@
 #!/bin/sh
 
-cd netty-websocket-http1-soaktest/build/install/netty-websocket-http1-soaktest/bin && ./netty-websocket-http1-soaktest-client
+cd netty-websocket-http1-test/build/install/netty-websocket-http1-test/bin && ./netty-websocket-http1-test-soakclient

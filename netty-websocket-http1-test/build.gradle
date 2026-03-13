@@ -15,27 +15,109 @@
  */
 
 plugins {
-    id "java-library"
+    id "application"
 }
 
-description = "Integration test for netty based implementation of rfc6455 - the websocket protocol"
+description = "Test module for netty based implementation of rfc6455 - the websocket protocol"
 
 dependencies {
-    api project(":netty-websocket-http1")
-    api "io.netty:netty-handler"
-
+    implementation project(":netty-websocket-http1")
+    implementation "io.netty:netty-handler"
     implementation "io.netty:netty-transport-classes-epoll"
     implementation "io.netty:netty-transport-classes-kqueue"
+    implementation "org.hdrhistogram:HdrHistogram"
     implementation "org.slf4j:slf4j-api"
+
+    if (osdetector.os == "linux") {
+        runtimeOnly "io.netty:netty-transport-native-epoll::${osdetector.classifier}"
+    } else if (osdetector.os == "osx") {
+        runtimeOnly "io.netty:netty-transport-native-kqueue::${osdetector.classifier}"
+    }
+    runtimeOnly "io.netty:netty-tcnative-boringssl-static::${osdetector.classifier}"
+    runtimeOnly "ch.qos.logback:logback-classic"
 
     testImplementation "org.junit.jupiter:junit-jupiter-api"
     testImplementation "org.junit.jupiter:junit-jupiter-params"
     testImplementation "org.assertj:assertj-core"
 
     testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine"
-    testRuntimeOnly "ch.qos.logback:logback-classic"
 }
 
 dependencyLocking {
     lockAllConfigurations()
+}
+
+task runPerfServer(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.server.Main"
+}
+
+task runPerfClient(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.client.Main"
+}
+
+task perfServerScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.server.Main"
+    applicationName = "${project.name}-perfserver"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+task perfClientScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.encoder.client.Main"
+    applicationName = "${project.name}-perfclient"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+startScripts.dependsOn perfServerScripts
+startScripts.dependsOn perfClientScripts
+
+task runPerfBulkServer(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.server.Main"
+}
+
+task runPerfBulkClient(type: JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.client.Main"
+}
+
+task serverPerfBulkScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.server.Main"
+    applicationName = "${project.name}-perfbulkserver"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+task clientPerfBulkScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.perftest.bulkencoder.client.Main"
+    applicationName = "${project.name}-perfbulkclient"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+startScripts.dependsOn serverPerfBulkScripts
+startScripts.dependsOn clientPerfBulkScripts
+
+task serverSoakScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.soaktest.server.Main"
+    applicationName = "${project.name}-soakserver"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+task clientSoakScripts(type: CreateStartScripts) {
+    mainClass = "com.jauntsdn.netty.handler.codec.http.websocketx.soaktest.client.Main"
+    applicationName = "${project.name}-soakclient"
+    classpath = startScripts.classpath
+    outputDir = startScripts.outputDir
+}
+
+startScripts.dependsOn serverSoakScripts
+startScripts.dependsOn clientSoakScripts
+
+tasks.named("startScripts") {
+    enabled = false
 }

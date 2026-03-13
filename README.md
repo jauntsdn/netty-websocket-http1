@@ -44,8 +44,8 @@ dependencies {
 
 ### performance
 
-Per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest), 
-[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http1/tree/netty-codec/netty-builtin-websocket-perftest/src/main/java/io/netty/handler/codec/http/websocketx/perftest) 
+Per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest), 
+[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http1/tree/netty-codec/netty-builtin-websocket-test/src/main/java/io/netty/handler/codec/http/websocketx/perftest) 
 comparison with netty's out-of-the-box websocket handlers: 
 non-masked frames with 8, 64, 125, 1000 bytes of payload over encrypted/non-encrypted connection.
 
@@ -69,8 +69,8 @@ java 9+
 
 Library may be combined with [jauntsdn/websocket-http2](https://github.com/jauntsdn/netty-websocket-http2) using [http1 codec](https://github.com/jauntsdn/netty-websocket-http2/blob/develop/netty-websocket-http2-callbacks-codec/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/WebSocketCallbacksCodec.java) 
 
-for significantly improved per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/callbackscodec), 
-[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/messagecodec):  
+for significantly improved per-core throughput [this codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-test/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/callbackscodec), 
+[netty built-in codec perf-test](https://github.com/jauntsdn/netty-websocket-http2/tree/develop/netty-websocket-http2-test/src/main/java/com/jauntsdn/netty/handler/codec/http2/websocketx/perftest/messagecodec):  
 
 * encrypted
 
@@ -135,16 +135,16 @@ public interface WebSocketCallbacksHandler {
 * WebSocket frames [integration tests](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/test/java/com/jauntsdn/netty/handler/codec/http/websocketx/WebSocketCodecTest.java): 
 control & data frames of all allowed sizes, jauntsdn/netty-websocket-http1 client, netty websocket server. 
 
-* WebSocket frames long-running [soak test](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-soaktest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/soaktest): 
+* WebSocket frames long-running [soak test](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/soaktest): 
 exercising all logic paths of codec with 100m of randomized frames over multiple connections: netty websocket client, jauntsdn/netty-websocket-http1 server.
 
-* [Perf tests](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest): 
+* [Perf tests](https://github.com/jauntsdn/netty-websocket-http1/tree/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest): 
 estimation of per-core throughput of jauntsdn/netty-websocket-http1 client & server.
 
 ### examples
 
-`netty-websocket-http1-perftest` may serve as API showcase for both [client](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest/client/Main.java) 
-and [server](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-perftest/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest/server/Main.java):
+`netty-websocket-http1 perftest` may serve as API showcase for both [client](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest/client/Main.java) 
+and [server](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/test/server/Main.java):
 
 ## LICENSE
 
