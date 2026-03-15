@@ -143,8 +143,8 @@ estimation of per-core throughput of jauntsdn/netty-websocket-http1 client & ser
 
 ### examples
 
-`netty-websocket-http1 perftest` may serve as API showcase for both [client](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest/client/Main.java) 
-and [server](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/test/server/Main.java):
+`netty-websocket-http1 perftest` may serve as API showcase for both [client](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest) 
+and [server](https://github.com/jauntsdn/netty-websocket-http1/blob/develop/netty-websocket-http1-test/src/main/java/com/jauntsdn/netty/handler/codec/http/websocketx/perftest):
 
 ## LICENSE
 
