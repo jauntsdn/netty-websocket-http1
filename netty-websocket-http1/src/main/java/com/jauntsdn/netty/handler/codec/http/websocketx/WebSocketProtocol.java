@@ -221,8 +221,9 @@ public final class WebSocketProtocol {
       boolean expectMaskedFrames,
       boolean allowMaskMismatch) {
 
-    if (maxFramePayloadLength < 125 || maxFramePayloadLength > 65_535) {
-      throw new IllegalArgumentException("maxFramePayloadLength must be in range [125; 65535]");
+    if (maxFramePayloadLength < 125) {
+      throw new IllegalArgumentException(
+          "maxFramePayloadLength must be >= 125 (control frames allowed size)");
     }
     if (allowExtensions) {
       throw new IllegalArgumentException("extensions are not supported");
