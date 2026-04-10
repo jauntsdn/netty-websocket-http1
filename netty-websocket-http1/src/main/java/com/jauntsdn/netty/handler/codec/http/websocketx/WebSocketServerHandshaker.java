@@ -16,6 +16,7 @@
 
 package com.jauntsdn.netty.handler.codec.http.websocketx;
 
+import com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.TlsSupport;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -25,7 +26,6 @@ import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
 import io.netty.handler.codec.http.websocketx.WebSocketServerHandshaker13;
 import io.netty.handler.codec.http.websocketx.WebSocketVersion;
-import io.netty.handler.ssl.SslHandler;
 import java.util.Objects;
 
 public class WebSocketServerHandshaker extends WebSocketServerHandshaker13 {
@@ -86,12 +86,9 @@ public class WebSocketServerHandshaker extends WebSocketServerHandshaker13 {
     }
 
     private static String webSocketUrl(ChannelPipeline cp, HttpRequest req, String path) {
-      String protocol = "ws";
-      if (cp.get(SslHandler.class) != null) {
-        protocol = "wss";
-      }
+      String scheme = TlsSupport.isAvailable() && TlsSupport.isEnabled(cp) ? "wss" : "ws";
       String host = req.headers().get(HttpHeaderNames.HOST);
-      return protocol + "://" + host + path;
+      return scheme + "://" + host + path;
     }
   }
 }

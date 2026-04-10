@@ -16,15 +16,16 @@
 
 package com.jauntsdn.netty.handler.codec.http.websocketx;
 
+import com.jauntsdn.netty.handler.codec.http.websocketx.WebSocketProtocol.TlsSupport;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.codec.http.websocketx.WebSocketClientHandshakeException;
 import io.netty.handler.codec.http.websocketx.WebSocketHandshakeException;
-import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.ScheduledFuture;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -245,7 +246,8 @@ public final class WebSocketClientProtocolHandler extends ChannelInboundHandlerA
   }
 
   private static URI uri(ChannelHandlerContext ctx, String address, String path) {
-    String scheme = ctx.pipeline().get(SslHandler.class) != null ? "wss://" : "ws://";
+    ChannelPipeline cp = ctx.pipeline();
+    String scheme = TlsSupport.isAvailable() && TlsSupport.isEnabled(cp) ? "wss://" : "ws://";
     String url;
     if (address != null) {
       url = scheme + address;

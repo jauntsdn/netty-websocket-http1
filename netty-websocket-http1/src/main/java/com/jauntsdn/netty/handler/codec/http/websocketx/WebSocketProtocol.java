@@ -19,11 +19,13 @@ package com.jauntsdn.netty.handler.codec.http.websocketx;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.websocketx.CorruptedWebSocketFrameException;
 import io.netty.handler.codec.http.websocketx.WebSocketCloseStatus;
 import io.netty.handler.codec.http.websocketx.WebSocketDecoderConfig;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameDecoder;
 import io.netty.handler.codec.http.websocketx.WebSocketFrameEncoder;
+import io.netty.handler.ssl.SslHandler;
 import java.util.function.IntSupplier;
 
 public final class WebSocketProtocol {
@@ -272,5 +274,28 @@ public final class WebSocketProtocol {
 
   public static WebSocketFrameEncoder frameEncoder(boolean expectMaskedFrames) {
     return WebSocketCallbacksFrameEncoder.frameEncoder(expectMaskedFrames, null);
+  }
+
+  static final class TlsSupport {
+    private static final boolean AVAILABLE;
+
+    static {
+      boolean available;
+      try {
+        Class.forName("io.netty.handler.ssl.SslHandler");
+        available = true;
+      } catch (ClassNotFoundException e) {
+        available = false;
+      }
+      AVAILABLE = available;
+    }
+
+    static boolean isAvailable() {
+      return AVAILABLE;
+    }
+
+    static boolean isEnabled(ChannelPipeline pipeline) {
+      return pipeline.get(SslHandler.class) != null;
+    }
   }
 }
